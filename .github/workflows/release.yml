@@ -165,7 +165,7 @@ jobs:
           git config --local user.name "GitHub Action"
           git add CHANGELOG.md
           if ! git diff --staged --quiet; then
-            git commit -m "chore: update CHANGELOG.md for v${{ steps.get_version.outputs.version }} [skip ci]"
+            git commit -m "chore: update CHANGELOG.md for v${{ steps.build.outputs.version }} [skip ci]"
             git push
           else
             echo "No changes to CHANGELOG.md"
