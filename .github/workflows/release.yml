@@ -1,0 +1,146 @@
+name: Create Release
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: read
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # 获取完整历史记录以生成 changelog
+          fetch-tags: true  # 获取所有 tags
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      
+      - name: Get version from manifest
+        id: get_version
+        run: |
+          VERSION=$(node -p "require('./manifest.json').version")
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Version: $VERSION"
+      
+      - name: Check if release already exists
+        id: check_release
+        run: |
+          TAG="v${{ steps.get_version.outputs.version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release $TAG already exists, skipping..."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Release $TAG does not exist, proceeding..."
+          fi
+      
+      - name: Generate Changelog
+        id: changelog
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          # 获取上次 tag 到现在的所有 commit 信息
+          LAST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "")
+          
+          if [ -z "$LAST_TAG" ]; then
+            # 如果没有 tag，获取所有 commit
+            CHANGELOG=$(git log --pretty=format:"- %s (%h)" --no-merges)
+          else
+            # 获取上次 tag 之后的 commit
+            CHANGELOG=$(git log ${LAST_TAG}..HEAD --pretty=format:"- %s (%h)" --no-merges)
+          fi
+          
+          # 如果没有新的 commit，使用默认消息
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="- 更新内容请查看 commit 历史"
+          fi
+          
+          # 添加版本号和日期
+          VERSION="${{ steps.get_version.outputs.version }}"
+          DATE=$(date +"%Y-%m-%d")
+          FULL_CHANGELOG="## Version $VERSION ($DATE)
+
+$CHANGELOG
+
+---
+*此版本由 GitHub Actions 自动生成*"
+          
+          # 保存到文件
+          echo "$FULL_CHANGELOG" > CHANGELOG_TEMP.md
+          
+          # 更新或创建 CHANGELOG.md
+          if [ -f CHANGELOG.md ]; then
+            # 在文件开头插入新内容
+            cat CHANGELOG_TEMP.md > CHANGELOG_NEW.md
+            echo "" >> CHANGELOG_NEW.md
+            cat CHANGELOG.md >> CHANGELOG_NEW.md
+            mv CHANGELOG_NEW.md CHANGELOG.md
+          else
+            mv CHANGELOG_TEMP.md CHANGELOG.md
+          fi
+          
+          # 将 changelog 内容保存到输出（用于 release notes）
+          echo "changelog<<EOF" >> $GITHUB_OUTPUT
+          echo "$FULL_CHANGELOG" >> $GITHUB_OUTPUT
+          echo "EOF" >> $GITHUB_OUTPUT
+      
+      - name: Package extension
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          VERSION="${{ steps.get_version.outputs.version }}"
+          PACKAGE_NAME="chorus-extension-v${VERSION}.zip"
+          
+          # 创建打包目录，排除不需要的文件
+          zip -r "$PACKAGE_NAME" . \
+            -x "*.git*" \
+            -x "*.github*" \
+            -x "*.DS_Store" \
+            -x "*.zip" \
+            -x "*.crx" \
+            -x "*.pem" \
+            -x "*.log" \
+            -x "node_modules/*" \
+            -x ".vscode/*" \
+            -x ".idea/*" \
+            -x "*.swp" \
+            -x "*.swo" \
+            -x "*~"
+          
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "Package created: $PACKAGE_NAME"
+      
+      - name: Create Release
+        if: steps.check_release.outputs.exists == 'false'
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ steps.get_version.outputs.version }}
+          name: Release v${{ steps.get_version.outputs.version }}
+          body: |
+            ${{ steps.changelog.outputs.changelog }}
+          files: |
+            chorus-extension-v${{ steps.get_version.outputs.version }}.zip
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      
+      - name: Commit CHANGELOG
+        if: steps.check_release.outputs.exists == 'false'
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add CHANGELOG.md
+          if ! git diff --staged --quiet; then
+            git commit -m "chore: update CHANGELOG.md for v${{ steps.get_version.outputs.version }} [skip ci]"
+            git push
+          else
+            echo "No changes to CHANGELOG.md"
+          fi
