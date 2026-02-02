@@ -9,7 +9,7 @@ const DEFAULT_PRODUCTS = [
     url: 'https://www.manus.im',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'anygen',
@@ -17,15 +17,15 @@ const DEFAULT_PRODUCTS = [
     url: 'https://www.anygen.io/',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="send" i], button[aria-label*="发送" i]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'coze',
-    name: '扣子',
+    name: 'Coze',
     url: 'https://www.coze.cn',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'minimax',
@@ -33,25 +33,25 @@ const DEFAULT_PRODUCTS = [
     url: 'https://agent.minimaxi.com/',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="send" i]',
-    enabled: true
+    enabled: false
   },
-  
+
   // Chat 产品
   {
     id: 'chatgpt',
     name: 'ChatGPT',
-    url: 'https://chat.openai.com',
-    selector: 'textarea',
+    url: 'https://chatgpt.com',
+    selector: '#prompt-textarea',
     submitSelector: 'button[data-testid="send-button"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'claude',
     name: 'Claude',
-    url: 'https://claude.ai',
-    selector: 'div[contenteditable="true"]',
-    submitSelector: 'button[aria-label*="send" i]',
-    enabled: true
+    url: 'https://claude.ai/new',
+    selector: 'div[contenteditable="true"][data-placeholder]',
+    submitSelector: 'button[aria-label="Send message"]',
+    enabled: false
   },
   {
     id: 'perplexity',
@@ -59,7 +59,7 @@ const DEFAULT_PRODUCTS = [
     url: 'https://www.perplexity.ai',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="submit" i]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'gemini',
@@ -67,32 +67,32 @@ const DEFAULT_PRODUCTS = [
     url: 'https://gemini.google.com',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="send" i]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'qianwen',
-    name: '千问',
+    name: 'Tongyi Qwen',
     url: 'https://www.qianwen.com/',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
 
   {
     id: 'doubao',
-    name: '豆包',
+    name: 'Doubao',
     url: 'https://www.doubao.com',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="发送" i]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'yiyan',
-    name: '文心一言',
+    name: 'ERNIE Bot',
     url: 'https://yiyan.baidu.com',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'kimi',
@@ -100,7 +100,7 @@ const DEFAULT_PRODUCTS = [
     url: 'https://kimi.moonshot.cn',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'genspark',
@@ -108,7 +108,7 @@ const DEFAULT_PRODUCTS = [
     url: 'https://www.genspark.ai',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'autoglm',
@@ -116,15 +116,15 @@ const DEFAULT_PRODUCTS = [
     url: 'https://chatglm.cn',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="send" i]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'metaso',
-    name: '秘塔 AI 搜索',
+    name: 'Metaso',
     url: 'https://metaso.cn',
     selector: 'textarea',
     submitSelector: 'button[type="submit"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'grok',
@@ -132,15 +132,15 @@ const DEFAULT_PRODUCTS = [
     url: 'https://x.com/i/grok',
     selector: 'textarea',
     submitSelector: 'button[data-testid="send-button"]',
-    enabled: true
+    enabled: false
   },
   {
     id: 'zhipu',
-    name: '智谱',
+    name: 'ChatGLM',
     url: 'https://chatglm.cn',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="发送" i]',
-    enabled: true
+    enabled: false
   }
 ];
 
@@ -208,7 +208,7 @@ async function loadProducts() {
     products = result.products;
   } else {
     // 首次使用，初始化默认产品列表
-    products = DEFAULT_PRODUCTS.map(p => ({ ...p, id: generateId() }));
+    products = DEFAULT_PRODUCTS.map(p => ({ ...p }));
     await saveProducts();
   }
 }
@@ -243,10 +243,25 @@ function renderProductsList() {
     </div>
   `).join('');
 
-  // 绑定复选框事件
+  // 绑定点击事件：点击整行切换复选框
   products.forEach(product => {
+    const item = document.querySelector(`.product-item[data-id="${product.id}"]`);
     const checkbox = document.getElementById(`product-${product.id}`);
-    if (checkbox) {
+
+    if (item && checkbox) {
+      // 点击整行切换
+      item.addEventListener('click', async (e) => {
+        // 如果点击的是复选框本身，让复选框的 change 事件处理
+        if (e.target.type === 'checkbox') return;
+
+        // 切换复选框状态
+        checkbox.checked = !checkbox.checked;
+        product.enabled = checkbox.checked;
+        await saveProducts();
+        updateDistributeButton();
+      });
+
+      // 复选框 change 事件
       checkbox.addEventListener('change', async (e) => {
         product.enabled = e.target.checked;
         await saveProducts();
@@ -264,24 +279,28 @@ function renderManageProductsList() {
   }
 
   manageProductsList.innerHTML = products.map(product => `
-    <div class="manage-product-item" data-id="${product.id}">
-      <div class="product-info">
-        <div class="product-name">${escapeHtml(product.name)}</div>
-        <div class="product-url">${escapeHtml(product.url)}</div>
+    <div class="manage-product-row" data-id="${product.id}">
+      <div class="manage-product-info">
+        <div class="manage-product-name">${escapeHtml(product.name)}</div>
+        <div class="manage-product-url">${escapeHtml(product.url)}</div>
       </div>
       <div class="manage-product-actions">
-        <button class="btn-icon-only edit" data-id="${product.id}" title="${t('editTitleAttr')}">✏️</button>
-        <button class="btn-icon-only delete" data-id="${product.id}" title="${t('deleteTitleAttr')}">🗑️</button>
+        <button class="btn-icon-text edit" data-id="${product.id}" title="${t('editTitleAttr')}">
+          <span>✏️</span>
+        </button>
+        <button class="btn-icon-text delete" data-id="${product.id}" title="${t('deleteTitleAttr')}">
+          <span>🗑️</span>
+        </button>
       </div>
     </div>
   `).join('');
 
   // 绑定编辑和删除按钮
-  document.querySelectorAll('.btn-icon-only.edit').forEach(btn => {
+  document.querySelectorAll('.manage-product-actions .edit').forEach(btn => {
     btn.addEventListener('click', () => openEditModal(btn.dataset.id));
   });
 
-  document.querySelectorAll('.btn-icon-only.delete').forEach(btn => {
+  document.querySelectorAll('.manage-product-actions .delete').forEach(btn => {
     btn.addEventListener('click', () => deleteProduct(btn.dataset.id));
   });
 }
@@ -485,7 +504,7 @@ async function handleDistribute() {
   progressText.textContent = t('progressText', { completed: 0, total: enabledProducts.length });
   if (cancelBtn) {
     cancelBtn.style.display = 'block';
-    cancelBtn.textContent = t('cancelBtn');
+    cancelBtn.textContent = t('cancelProgressBtn');
   }
   
   try {
@@ -505,17 +524,20 @@ async function handleDistribute() {
         updateDistributeButton();
       }
     };
-    
+
     chrome.runtime.onMessage.addListener(progressListener);
-    
-    // 发送消息到 background script
-    const response = await chrome.runtime.sendMessage({
-      action: 'distribute',
-      prompt,
-      products: enabledProducts
-    });
-    
-    chrome.runtime.onMessage.removeListener(progressListener);
+
+    let response;
+    try {
+      // 发送消息到 background script
+      response = await chrome.runtime.sendMessage({
+        action: 'distribute',
+        prompt,
+        products: enabledProducts
+      });
+    } finally {
+      chrome.runtime.onMessage.removeListener(progressListener);
+    }
     
     // 检查是否被取消
     if (distributionCancelled) {
@@ -550,7 +572,7 @@ async function handleDistribute() {
       if (cancelBtn) {
         cancelBtn.style.display = 'none';
       }
-      showStatus('Distribution cancelled', 'info');
+      showStatus(t('statusDistributeCancelled'), 'info');
     } else {
       progressSection.style.display = 'none';
       if (cancelBtn) {
@@ -586,7 +608,7 @@ async function cancelDistribution() {
   }
   distributeBtn.disabled = false;
   updateDistributeButton();
-  showStatus('Distribution cancelled', 'info');
+  showStatus(t('statusDistributeCancelled'), 'info');
 }
 
 // 显示状态消息

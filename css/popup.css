@@ -5,6 +5,11 @@
   box-sizing: border-box;
 }
 
+html {
+  overscroll-behavior: none;
+  overflow: hidden;
+}
+
 :root {
   /* 主色调 - 深灰色系 */
   --color-primary: #2c3e50;
@@ -46,24 +51,23 @@ body {
   font-size: 14px;
   color: var(--color-text-primary);
   background: var(--color-bg);
-  width: 400px;
-  min-height: 500px;
-  max-height: 600px;
+  width: 360px;
+  height: auto;
+  max-height: 540px;
   overflow-y: auto;
-  line-height: 1.6;
-  overscroll-behavior-y: none;
-  overscroll-behavior-x: none;
+  line-height: 1.5;
+  overscroll-behavior: none;
 }
 
 /* 容器 */
 .container {
-  padding: 16px;
+  padding: 12px 16px 16px;
 }
 
 /* 头部 */
 .header {
-  margin-bottom: 20px;
-  padding-bottom: 12px;
+  margin-bottom: 12px;
+  padding-bottom: 10px;
   border-bottom: 1px solid var(--color-border);
   display: flex;
   justify-content: space-between;
@@ -82,42 +86,29 @@ body {
 }
 
 .logo img {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
 }
 
-.title-group {
-  display: flex;
-  align-items: baseline;
-  gap: 10px;
-}
-
 .logo h1 {
-  font-size: 20px;
+  font-size: 18px;
   font-weight: 600;
   color: var(--color-primary);
-  letter-spacing: 0.5px;
+  letter-spacing: 0.3px;
   margin: 0;
-}
-
-.subtitle {
-  font-size: 12px;
-  color: var(--color-text-secondary);
-  font-weight: 400;
-  white-space: nowrap;
 }
 
 /* 区块 */
 section {
-  margin-bottom: 16px;
+  margin-bottom: 12px;
 }
 
 .section-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 12px;
+  margin-bottom: 8px;
 }
 
 .section-header label {
@@ -129,13 +120,14 @@ section {
 /* Prompt 输入区 */
 .prompt-section textarea {
   width: 100%;
-  padding: 12px;
+  padding: 10px 12px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 14px;
   font-family: inherit;
-  resize: vertical;
-  min-height: 120px;
+  resize: none;
+  height: 70px;
+  min-height: 70px;
   transition: all 0.2s ease;
   background: var(--color-bg-secondary);
   color: var(--color-text-primary);
@@ -153,27 +145,27 @@ section {
 
 /* 产品列表 */
 .products-list {
-  max-height: 240px;
+  max-height: 180px;
   overflow-y: auto;
   background: var(--color-bg-secondary);
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  padding: 12px;
+  padding: 8px;
   overscroll-behavior: none;
   display: grid !important;
   grid-template-columns: repeat(2, 1fr) !important;
-  gap: 8px;
+  gap: 4px;
 }
 
 .product-item {
   display: flex;
   align-items: center;
-  padding: 10px 12px;
+  padding: 8px 10px;
   border-radius: 4px;
   transition: all 0.2s ease;
   cursor: pointer;
   border: 1px solid transparent;
-  min-height: 44px;
+  min-height: 36px;
 }
 
 .product-item:hover {
@@ -264,7 +256,7 @@ section {
 
 .btn-primary {
   width: 100%;
-  padding: 14px 24px;
+  padding: 12px 20px;
   background: var(--color-primary);
   color: white;
   display: flex;
@@ -272,6 +264,7 @@ section {
   justify-content: center;
   gap: 8px;
   box-shadow: var(--shadow-sm);
+  font-size: 15px;
 }
 
 .btn-primary:hover:not(:disabled) {
@@ -448,47 +441,52 @@ section {
   overflow-y: auto;
 }
 
-/* 管理产品列表 */
+/* 管理产品列表 - 条目式布局 */
 .products-manage-list {
   margin-bottom: 16px;
-  display: grid !important;
-  grid-template-columns: repeat(2, 1fr) !important;
-  gap: 8px;
-}
-
-.manage-product-item {
   display: flex;
   flex-direction: column;
-  padding: 12px;
+  gap: 0;
   border: 1px solid var(--color-border);
   border-radius: 6px;
+  overflow: hidden;
+}
+
+.manage-product-row {
+  display: flex;
+  align-items: center;
+  padding: 12px 16px;
   background: var(--color-bg-secondary);
-  transition: all 0.2s ease;
-  min-height: 80px;
+  border-bottom: 1px solid var(--color-border-light);
+  transition: background-color 0.2s ease;
 }
 
-.manage-product-item:hover {
-  border-color: var(--color-accent);
-  box-shadow: var(--shadow-sm);
+.manage-product-row:last-child {
+  border-bottom: none;
 }
 
-.manage-product-item .product-info {
+.manage-product-row:hover {
+  background-color: var(--color-bg-hover);
+}
+
+.manage-product-info {
   flex: 1;
-  margin-bottom: 8px;
+  min-width: 0;
+  margin-right: 12px;
 }
 
-.manage-product-item .product-name {
-  font-size: 13px;
+.manage-product-name {
+  font-size: 14px;
   font-weight: 500;
   color: var(--color-text-primary);
-  margin-bottom: 4px;
+  margin-bottom: 2px;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.manage-product-item .product-url {
-  font-size: 11px;
+.manage-product-url {
+  font-size: 12px;
   color: var(--color-text-secondary);
   overflow: hidden;
   text-overflow: ellipsis;
@@ -497,33 +495,34 @@ section {
 
 .manage-product-actions {
   display: flex;
-  gap: 8px;
-  justify-content: flex-end;
-  margin-top: auto;
+  gap: 4px;
+  flex-shrink: 0;
 }
 
-.btn-icon-only {
-  width: 32px;
-  height: 32px;
+.btn-icon-text {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
   border: none;
   background: transparent;
   cursor: pointer;
   border-radius: 4px;
-  font-size: 16px;
+  font-size: 14px;
   transition: all 0.2s ease;
+  padding: 0;
 }
 
-.btn-icon-only:hover {
+.btn-icon-text:hover {
   background: var(--color-bg-hover);
 }
 
-.btn-icon-only.edit:hover {
-  color: var(--color-info);
+.btn-icon-text.edit:hover {
   background: rgba(52, 152, 219, 0.1);
 }
 
-.btn-icon-only.delete:hover {
-  color: var(--color-error);
+.btn-icon-text.delete:hover {
   background: rgba(231, 76, 60, 0.1);
 }
 

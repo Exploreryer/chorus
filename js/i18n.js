@@ -1,133 +1,127 @@
 // 国际化翻译文件
 const translations = {
   en: {
-    // Header
-    subtitle: 'AI Prompt Comparison Assistant',
-    
     // Prompt section
-    promptLabel: 'Enter Prompt',
+    promptLabel: 'Question',
     clearBtn: 'Clear',
-    promptPlaceholder: 'Enter or paste your Prompt here...',
-    
+    promptPlaceholder: 'What do you want to ask?',
+
     // Products section
-    selectProducts: 'Select AI Products',
+    selectProducts: 'AI Products',
     manageBtn: 'Manage',
-    noProducts: 'No AI products',
-    addFirstBtn: 'Add First Product',
-    
+    noProducts: 'No products added',
+    addFirstBtn: 'Add Product',
+
     // Progress
     progressText: '{completed} / {total}',
-    cancelBtn: 'Cancel',
-    
+    cancelProgressBtn: 'Cancel',
+
     // Actions
-    distributeBtn: 'Execute',
-    
+    distributeBtn: 'Ask All',
+
     // Status messages
-    statusFillRequired: 'Please fill in required fields',
+    statusFillRequired: 'Please fill in all required fields',
     statusProductUpdated: 'Product updated',
     statusProductAdded: 'Product added',
     statusProductDeleted: 'Product deleted',
-    statusEnterPrompt: 'Please enter a Prompt',
-    statusSelectProduct: 'Please select at least one AI product',
-    statusDistributeSuccess: 'Successfully distributed to {count} products',
-    statusDistributePartial: 'Success: {success}, Failed: {fail}',
-    statusDistributeFailed: 'Distribution failed: {error}',
-    statusDistributeCancelled: 'Distribution cancelled',
-    
+    statusEnterPrompt: 'Please enter a prompt',
+    statusSelectProduct: 'Please select at least one product',
+    statusDistributeSuccess: 'Sent to {count} products',
+    statusDistributePartial: 'Sent: {success}, Failed: {fail}',
+    statusDistributeFailed: 'Failed: {error}',
+    statusDistributeCancelled: 'Cancelled',
+
     // Manage modal
-    manageTitle: 'Manage AI Products',
-    addProductBtn: '+ Add New Product',
-    noProductsText: 'No products',
-    
+    manageTitle: 'Manage Products',
+    addProductBtn: '+ Add Product',
+    noProductsText: 'No products yet',
+
     // Edit modal
     editTitle: 'Edit Product',
     addTitle: 'Add Product',
-    productNameLabel: 'Product Name *',
+    productNameLabel: 'Name *',
     productNamePlaceholder: 'e.g., ChatGPT',
-    productUrlLabel: 'Product URL *',
+    productUrlLabel: 'URL *',
     productUrlPlaceholder: 'https://chat.openai.com',
     productSelectorLabel: 'Input Selector (Optional)',
-    productSelectorPlaceholder: 'e.g., textarea or div[contenteditable=\'true\']',
-    productSelectorHint: 'Leave empty to use default selector auto-detection',
-    productSubmitSelectorLabel: 'Submit Button Selector (Optional)',
-    productSubmitSelectorPlaceholder: 'e.g., button[type=\'submit\'] or button[aria-label*=\'send\']',
-    productSubmitSelectorHint: 'Leave empty to use default selector auto-detection. If configured, will auto-submit message',
+    productSelectorPlaceholder: 'e.g., textarea',
+    productSelectorHint: 'Auto-detected if empty',
+    productSubmitSelectorLabel: 'Send Button Selector (Optional)',
+    productSubmitSelectorPlaceholder: 'e.g., button[type="submit"]',
+    productSubmitSelectorHint: 'Auto-submit if configured',
     cancelBtn: 'Cancel',
     saveBtn: 'Save',
-    
+
     // Delete confirmation
-    deleteConfirm: 'Are you sure you want to delete this product?',
-    
+    deleteConfirm: 'Delete this product?',
+
     // Button titles
     editTitleAttr: 'Edit',
     deleteTitleAttr: 'Delete'
   },
   zh: {
-    // Header
-    subtitle: 'AI Prompt 横评助手',
-    
     // Prompt section
-    promptLabel: '输入 Prompt',
+    promptLabel: '问题',
     clearBtn: '清空',
-    promptPlaceholder: '在此输入或粘贴您的 Prompt...',
-    
+    promptPlaceholder: '想问点什么？',
+
     // Products section
-    selectProducts: '选择 AI 产品',
+    selectProducts: 'AI 产品',
     manageBtn: '管理',
-    noProducts: '暂无 AI 产品',
-    addFirstBtn: '添加第一个产品',
-    
+    noProducts: '暂无产品',
+    addFirstBtn: '添加产品',
+
     // Progress
     progressText: '{completed} / {total}',
-    cancelBtn: '取消',
-    
+    cancelProgressBtn: '取消',
+
     // Actions
-    distributeBtn: '执行',
-    
+    distributeBtn: '一起问',
+
     // Status messages
     statusFillRequired: '请填写必填项',
-    statusProductUpdated: '产品已更新',
-    statusProductAdded: '产品已添加',
-    statusProductDeleted: '产品已删除',
-    statusEnterPrompt: '请输入 Prompt',
-    statusSelectProduct: '请至少选择一个 AI 产品',
-    statusDistributeSuccess: '成功分发到 {count} 个产品',
-    statusDistributePartial: '成功 {success} 个，失败 {fail} 个',
-    statusDistributeFailed: '分发失败: {error}',
-    statusDistributeCancelled: '分发已取消',
-    
+    statusProductUpdated: '已更新',
+    statusProductAdded: '已添加',
+    statusProductDeleted: '已删除',
+    statusEnterPrompt: '请输入提示词',
+    statusSelectProduct: '请至少选择一个产品',
+    statusDistributeSuccess: '已发送到 {count} 个产品',
+    statusDistributePartial: '成功 {success}，失败 {fail}',
+    statusDistributeFailed: '发送失败：{error}',
+    statusDistributeCancelled: '已取消',
+
     // Manage modal
-    manageTitle: '管理 AI 产品',
-    addProductBtn: '+ 添加新产品',
+    manageTitle: '管理产品',
+    addProductBtn: '+ 添加产品',
     noProductsText: '暂无产品',
-    
+
     // Edit modal
     editTitle: '编辑产品',
     addTitle: '添加产品',
-    productNameLabel: '产品名称 *',
-    productNamePlaceholder: '例如：ChatGPT',
-    productUrlLabel: '产品 URL *',
+    productNameLabel: '名称 *',
+    productNamePlaceholder: '如：ChatGPT',
+    productUrlLabel: '网址 *',
     productUrlPlaceholder: 'https://chat.openai.com',
     productSelectorLabel: '输入框选择器（可选）',
-    productSelectorPlaceholder: '例如：textarea 或 div[contenteditable=\'true\']',
-    productSelectorHint: '留空将使用默认选择器自动识别',
+    productSelectorPlaceholder: '如：textarea',
+    productSelectorHint: '留空则自动识别',
     productSubmitSelectorLabel: '发送按钮选择器（可选）',
-    productSubmitSelectorPlaceholder: '例如：button[type=\'submit\'] 或 button[aria-label*=\'send\']',
-    productSubmitSelectorHint: '留空将使用默认选择器自动识别，配置后将自动发送消息',
+    productSubmitSelectorPlaceholder: '如：button[type="submit"]',
+    productSubmitSelectorHint: '配置后将自动发送',
     cancelBtn: '取消',
     saveBtn: '保存',
-    
+
     // Delete confirmation
-    deleteConfirm: '确定要删除这个产品吗?',
-    
+    deleteConfirm: '确定删除此产品？',
+
     // Button titles
     editTitleAttr: '编辑',
     deleteTitleAttr: '删除'
   }
 };
 
-// 当前语言
-let currentLang = 'zh';
+// 当前语言 - 默认为英文
+let currentLang = 'en';
 
 // 获取翻译
 function t(key, params = {}) {
@@ -157,12 +151,8 @@ async function initLanguage() {
   const result = await chrome.storage.local.get(['language']);
   if (result.language && translations[result.language]) {
     currentLang = result.language;
-  } else {
-    // 根据浏览器语言自动选择
-    const browserLang = navigator.language || navigator.userLanguage;
-    currentLang = browserLang.startsWith('zh') ? 'zh' : 'en';
-    await chrome.storage.local.set({ language: currentLang });
   }
+  // 如果没有保存的语言设置，默认使用英文（不根据浏览器自动切换）
   updateUI();
 }
 
@@ -249,7 +239,7 @@ function updateUI() {
   // 更新取消按钮
   const cancelBtn = document.getElementById('cancelBtn');
   if (cancelBtn && cancelBtn.style.display !== 'none') {
-    cancelBtn.textContent = t('cancelBtn');
+    cancelBtn.textContent = t('cancelProgressBtn');
   }
   
   // 触发自定义事件，通知其他脚本更新

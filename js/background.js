@@ -65,19 +65,8 @@ async function handleDistribute(prompt, products) {
     }
   });
   
-  // 创建标签组
+  // 创建标签组（延迟到第一个标签页创建后）
   let groupId = null;
-  try {
-    groupId = await chrome.tabs.group({ tabIds: [] });
-    await chrome.tabGroups.update(groupId, {
-      title: 'Chorus AI 横评',
-      color: 'grey',
-      collapsed: false
-    });
-  } catch (error) {
-    console.warn('Failed to create tab group:', error);
-    // 如果标签组创建失败，继续正常流程
-  }
   
   for (const product of products) {
     // 检查是否已取消
@@ -94,29 +83,40 @@ async function handleDistribute(prompt, products) {
       
       tabIds.push(tab.id);
       currentDistribution.tabIds = tabIds;
-      
+
       // 检查是否已取消
       if (distributionCancelled) {
         break;
       }
-      
-      // 将标签添加到标签组
-      if (groupId !== null) {
-        try {
+
+      // 将标签添加到标签组（第一个标签创建组，后续添加到组）
+      try {
+        if (groupId === null) {
+          groupId = await chrome.tabs.group({ tabIds: [tab.id] });
+          await chrome.tabGroups.update(groupId, {
+            title: 'Chorus',
+            color: 'grey',
+            collapsed: false
+          });
+        } else {
           await chrome.tabs.group({ tabIds: [tab.id], groupId });
-        } catch (error) {
-          console.warn('Failed to add tab to group:', error);
         }
+      } catch (error) {
+        console.warn('Failed to add tab to group:', error);
       }
-      
+
       // 等待页面加载完成
       await waitForTabLoad(tab.id);
-      
+
       // 检查是否已取消
       if (distributionCancelled) {
         break;
       }
-      
+
+      // 激活标签页以确保内容填充和点击操作能正常执行
+      await chrome.tabs.update(tab.id, { active: true });
+      await sleep(300);
+
       // 发送填充指令到 content script
       const fillResult = await fillPrompt(tab.id, prompt, product.selector, product.submitSelector);
       
@@ -192,7 +192,7 @@ function waitForTabLoad(tabId, timeout = 30000) {
     const checkStatus = () => {
       chrome.tabs.get(tabId, (tab) => {
         if (chrome.runtime.lastError) {
-          reject(new Error('标签页已关闭'));
+          reject(new Error('Tab closed'));
           return;
         }
         
@@ -200,7 +200,7 @@ function waitForTabLoad(tabId, timeout = 30000) {
           // 额外等待 1 秒确保页面完全渲染
           setTimeout(() => resolve(), 1000);
         } else if (Date.now() - startTime > timeout) {
-          reject(new Error('页面加载超时'));
+          reject(new Error('Page load timeout'));
         } else {
           setTimeout(checkStatus, 500);
         }
@@ -213,26 +213,41 @@ function waitForTabLoad(tabId, timeout = 30000) {
 
 // 填充 Prompt 到页面
 async function fillPrompt(tabId, prompt, customSelector, customSubmitSelector) {
-  return new Promise((resolve) => {
-    chrome.tabs.sendMessage(
-      tabId,
-      {
+  // 等待 content script 准备就绪（通过重试机制）
+  const maxRetries = 5;
+  for (let i = 0; i < maxRetries; i++) {
+    try {
+      const response = await sendMessageToTab(tabId, {
         action: 'fillPrompt',
         prompt,
         selector: customSelector,
         submitSelector: customSubmitSelector
-      },
-      (response) => {
-        if (chrome.runtime.lastError) {
-          resolve({
-            success: false,
-            error: '无法与页面通信: ' + chrome.runtime.lastError.message
-          });
-        } else {
-          resolve(response || { success: false, error: '未收到响应' });
-        }
+      });
+
+      if (response) {
+        return response;
       }
-    );
+    } catch (error) {
+      console.log(`Chorus: Content script not ready, retry ${i + 1}/${maxRetries}`);
+      if (i < maxRetries - 1) {
+        await sleep(500);
+      }
+    }
+  }
+
+  return { success: false, error: 'Content script not responding' };
+}
+
+// 向标签页发送消息
+function sendMessageToTab(tabId, message) {
+  return new Promise((resolve, reject) => {
+    chrome.tabs.sendMessage(tabId, message, (response) => {
+      if (chrome.runtime.lastError) {
+        reject(new Error(chrome.runtime.lastError.message));
+      } else {
+        resolve(response);
+      }
+    });
   });
 }
 
