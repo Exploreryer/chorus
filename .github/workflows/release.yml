@@ -4,6 +4,16 @@ on:
   push:
     branches:
       - main
+  workflow_dispatch:
+    inputs:
+      force:
+        description: '强制创建 release（即使 tag 已存在）'
+        required: false
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
 
 jobs:
   release:
@@ -35,7 +45,12 @@ jobs:
         id: check_release
         run: |
           TAG="v${{ steps.get_version.outputs.version }}"
-          if git rev-parse "$TAG" >/dev/null 2>&1; then
+          FORCE="${{ github.event.inputs.force }}"
+          
+          if [ "$FORCE" = "true" ]; then
+            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "Force mode enabled, proceeding even if $TAG exists..."
+          elif git rev-parse "$TAG" >/dev/null 2>&1; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Release $TAG already exists, skipping..."
           else
