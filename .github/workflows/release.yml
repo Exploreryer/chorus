@@ -38,17 +38,33 @@ jobs:
       - name: Install dependencies
         run: npm ci
       
-      - name: Get version from config
-        id: get_version
+      - name: Build and package extension
         run: |
-          VERSION=$(node -p "const config = await import('./wxt.config.ts'); config.default.manifest.version" --input-type=module || echo "1.0.0")
+          # Build extension with WXT (includes zip via postbuild)
+          npm run build
+          
+          # Extract version from generated zip filename
+          # Example: .output/chorus-1.0.1-chrome.zip -> 1.0.1
+          ZIP_FILE=$(find .output -name "chorus-*.zip" -type f | head -1)
+          
+          if [ -z "$ZIP_FILE" ]; then
+            echo "Error: No zip file found in .output/"
+            exit 1
+          fi
+          
+          # Extract version from filename: chorus-VERSION-chrome.zip
+          VERSION=$(basename "$ZIP_FILE" | sed -E 's/chorus-(.+)-chrome\.zip/\1/')
+          
+          echo "Found zip file: $ZIP_FILE"
+          echo "Extracted version: $VERSION"
           echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Version: $VERSION"
+          echo "zip_file=$ZIP_FILE" >> $GITHUB_OUTPUT
+        id: build
       
       - name: Check if release already exists
         id: check_release
         run: |
-          TAG="v${{ steps.get_version.outputs.version }}"
+          TAG="v${{ steps.build.outputs.version }}"
           FORCE="${{ github.event.inputs.force }}"
           
           if [ "$FORCE" = "true" ]; then
@@ -83,7 +99,7 @@ jobs:
           fi
           
           # Add version and date
-          VERSION="${{ steps.get_version.outputs.version }}"
+          VERSION="${{ steps.build.outputs.version }}"
           DATE=$(date +"%Y-%m-%d")
           
           # Create changelog content using heredoc
@@ -114,39 +130,29 @@ jobs:
             echo "EOF"
           } >> $GITHUB_OUTPUT
       
-      - name: Build and package extension
+      - name: Prepare release package
         if: steps.check_release.outputs.exists == 'false'
         run: |
-          # Build extension with WXT
-          npm run build
-          
-          # Package is already created by postbuild script
-          VERSION="${{ steps.get_version.outputs.version }}"
-          
-          # Find the generated zip file in .output directory
-          ZIP_FILE=$(find .output -name "*.zip" -type f | head -1)
+          VERSION="${{ steps.build.outputs.version }}"
+          ZIP_FILE="${{ steps.build.outputs.zip_file }}"
           PACKAGE_NAME="chorus-extension-v${VERSION}.zip"
           
-          # Copy to root with version name
-          if [ -f "$ZIP_FILE" ]; then
-            cp "$ZIP_FILE" "$PACKAGE_NAME"
-            echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
-            echo "Package created: $PACKAGE_NAME"
-          else
-            echo "Error: Build output not found"
-            exit 1
-          fi
+          # Copy zip file to root with standardized name
+          cp "$ZIP_FILE" "$PACKAGE_NAME"
+          echo "package_name=$PACKAGE_NAME" >> $GITHUB_OUTPUT
+          echo "Release package ready: $PACKAGE_NAME"
+        id: package
       
       - name: Create Release
         if: steps.check_release.outputs.exists == 'false'
         uses: softprops/action-gh-release@v1
         with:
-          tag_name: v${{ steps.get_version.outputs.version }}
-          name: Release v${{ steps.get_version.outputs.version }}
+          tag_name: v${{ steps.build.outputs.version }}
+          name: Release v${{ steps.build.outputs.version }}
           body: |
             ${{ steps.changelog.outputs.changelog }}
           files: |
-            chorus-extension-v${{ steps.get_version.outputs.version }}.zip
+            ${{ steps.package.outputs.package_name }}
           draft: false
           prerelease: false
         env:
