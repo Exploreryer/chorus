@@ -1,6 +1,6 @@
 {
   "name": "chorus",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Chorus - AI Prompt Comparison Assistant",
   "type": "module",
   "scripts": {
