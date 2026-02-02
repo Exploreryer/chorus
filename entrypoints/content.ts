@@ -1,51 +1,66 @@
-// 内容脚本 - 注入到目标页面进行自动填充
+import type { FillPromptRequest, FillPromptResponse } from '../types';
 
-// 监听来自 background 的消息
-chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-  if (request.action === 'fillPrompt') {
-    fillPrompt(request.prompt, request.selector, request.submitSelector)
-      .then(result => {
-        sendResponse(result);
-      })
-      .catch(error => {
-        sendResponse({
-          success: false,
-          error: error.message
-        });
-      });
-    return true; // 保持消息通道开启以支持异步响应
-  }
+export default defineContentScript({
+  matches: ['<all_urls>'],
+  runAt: 'document_idle',
+
+  main() {
+    // Listen for messages from background
+    chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
+      if (request.action === 'fillPrompt') {
+        const { prompt, selector, submitSelector } = request as FillPromptRequest;
+        fillPrompt(prompt, selector, submitSelector)
+          .then((result) => {
+            sendResponse(result);
+          })
+          .catch((error: Error) => {
+            sendResponse({
+              success: false,
+              error: error.message,
+            });
+          });
+        return true; // Keep message channel open for async response
+      }
+    });
+
+    console.log('Chorus content script loaded');
+  },
 });
 
-// 填充 Prompt 到输入框
-async function fillPrompt(prompt, customSelector, customSubmitSelector) {
+// Fill prompt into input field
+async function fillPrompt(
+  prompt: string,
+  customSelector?: string,
+  customSubmitSelector?: string
+): Promise<FillPromptResponse> {
   try {
     console.log('Chorus: Starting fill prompt, selector:', customSelector);
 
-    // 尝试定位输入框
+    // Try to locate input element
     const inputElement = await findInputElement(customSelector);
 
     if (!inputElement) {
       console.warn('Chorus: Input field not found');
       return {
         success: false,
-        error: 'Input field not found'
+        error: 'Input field not found',
       };
     }
 
     console.log('Chorus: Found input element:', inputElement.tagName, inputElement.className);
 
-    // 填充内容
+    // Fill content
     await fillContent(inputElement, prompt);
 
-    // 等待按钮从禁用状态变为可用状态
-    // 对于特定平台需要更长的等待时间
+    // Wait for button to become enabled
+    // Some platforms need longer wait time
     const hostname = window.location.hostname;
-    const waitTime = (hostname.includes('baidu.com') || hostname.includes('doubao.com')) ? 1500 : 800;
+    const waitTime =
+      hostname.includes('baidu.com') || hostname.includes('doubao.com') ? 1500 : 800;
     console.log(`Chorus: Waiting ${waitTime}ms for button to enable...`);
     await sleep(waitTime);
 
-    // 尝试自动发送（无论是否配置了自定义选择器都尝试）
+    // Try auto-submit (whether custom selector is configured or not)
     const submitResult = await autoSubmit(customSubmitSelector, inputElement);
     if (!submitResult.success) {
       console.warn('Chorus: Auto-submit failed', submitResult.error);
@@ -53,39 +68,45 @@ async function fillPrompt(prompt, customSelector, customSubmitSelector) {
 
     return {
       success: true,
-      message: submitResult.success ? 'Prompt filled and sent successfully' : 'Prompt filled successfully'
+      message: submitResult.success
+        ? 'Prompt filled and sent successfully'
+        : 'Prompt filled successfully',
     };
   } catch (error) {
     console.error('Chorus: Fill prompt error:', error);
     return {
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : 'Unknown error',
     };
   }
 }
 
-// 查找输入框元素
-async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800) {
+// Find input element
+async function findInputElement(
+  customSelector?: string,
+  maxRetries = 5,
+  retryDelay = 800
+): Promise<HTMLElement | null> {
   for (let i = 0; i < maxRetries; i++) {
-    let element = null;
+    let element: HTMLElement | null = null;
     console.log(`Chorus: Finding input element, attempt ${i + 1}/${maxRetries}`);
 
-    // 1. 如果提供了自定义选择器，优先使用
+    // 1. If custom selector provided, use it first
     if (customSelector) {
-      element = document.querySelector(customSelector);
+      element = document.querySelector(customSelector) as HTMLElement;
       if (element && isVisible(element)) {
         console.log('Chorus: Found element with custom selector');
         return element;
       }
     }
 
-    // 2. 尝试常见的输入框选择器（按优先级排序）
+    // 2. Try common input field selectors (ordered by priority)
     const selectors = [
-      // 现代 AI 产品常见选择器
-      '#prompt-textarea',  // ChatGPT
-      '[data-testid="text-input"]',  // 通用测试 ID
-      'div[contenteditable="true"][data-placeholder]',  // Claude 等
-      'div.ProseMirror[contenteditable="true"]',  // 使用 ProseMirror 的编辑器
+      // Modern AI products common selectors
+      '#prompt-textarea',
+      '[data-testid="text-input"]',
+      'div[contenteditable="true"][data-placeholder]',
+      'div.ProseMirror[contenteditable="true"]',
 
       // Textarea
       'textarea[placeholder*="message" i]',
@@ -107,9 +128,9 @@ async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800
       'input[type="text"][placeholder*="prompt" i]',
       'input[type="text"]:not([disabled]):not([readonly])',
 
-      // 通用选择器（最后尝试）
+      // Generic selectors (last resort)
       'textarea',
-      'input[type="text"]'
+      'input[type="text"]',
     ];
 
     for (const selector of selectors) {
@@ -117,10 +138,10 @@ async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800
         const elements = document.querySelectorAll(selector);
         console.log(`Chorus: Selector "${selector}" found ${elements.length} elements`);
 
-        // 过滤隐藏元素
+        // Filter hidden elements
         for (const el of elements) {
-          if (isVisible(el) && isEditable(el)) {
-            element = el;
+          if (isVisible(el as HTMLElement) && isEditable(el as HTMLElement)) {
+            element = el as HTMLElement;
             console.log('Chorus: Found visible editable element with selector:', selector);
             break;
           }
@@ -128,7 +149,7 @@ async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800
 
         if (element) break;
       } catch (e) {
-        // 忽略无效选择器错误
+        // Ignore invalid selector errors
       }
     }
 
@@ -136,7 +157,7 @@ async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800
       return element;
     }
 
-    // 如果没找到且还有重试次数，等待后重试
+    // If not found and retries remain, wait and retry
     if (i < maxRetries - 1) {
       console.log(`Chorus: Waiting ${retryDelay}ms before retry...`);
       await sleep(retryDelay);
@@ -147,40 +168,43 @@ async function findInputElement(customSelector, maxRetries = 5, retryDelay = 800
   return null;
 }
 
-// 检查元素是否可见
-function isVisible(element) {
+// Check if element is visible
+function isVisible(element: HTMLElement): boolean {
   const style = window.getComputedStyle(element);
-  return style.display !== 'none' && 
-         style.visibility !== 'hidden' && 
-         style.opacity !== '0' &&
-         element.offsetWidth > 0 &&
-         element.offsetHeight > 0;
+  return (
+    style.display !== 'none' &&
+    style.visibility !== 'hidden' &&
+    style.opacity !== '0' &&
+    element.offsetWidth > 0 &&
+    element.offsetHeight > 0
+  );
 }
 
-// 检查元素是否可编辑
-function isEditable(element) {
-  if (element.disabled || element.readOnly) {
+// Check if element is editable
+function isEditable(element: HTMLElement): boolean {
+  if ((element as any).disabled || (element as any).readOnly) {
     return false;
   }
-  
-  if (element.contentEditable === 'true') {
+
+  if ((element as any).contentEditable === 'true') {
     return true;
   }
-  
+
   if (element.tagName === 'TEXTAREA' || element.tagName === 'INPUT') {
     return true;
   }
-  
+
   return false;
 }
 
-// 填充内容到元素
-async function fillContent(element, content) {
+// Fill content into element
+async function fillContent(element: HTMLElement, content: string): Promise<void> {
   console.log('Chorus: Filling content to element:', element.tagName, element.className);
 
-  // 检查是否是特定平台需要特殊处理
+  // Check if specific platform needs special handling
   const hostname = window.location.hostname;
-  const needsSpecialHandling = hostname.includes('baidu.com') || hostname.includes('doubao.com');
+  const needsSpecialHandling =
+    hostname.includes('baidu.com') || hostname.includes('doubao.com');
 
   if (needsSpecialHandling) {
     console.log('Chorus: Using special handling for', hostname);
@@ -189,53 +213,56 @@ async function fillContent(element, content) {
     await fillWithEvents(element, content);
   }
 
-  // 再次聚焦
+  // Focus again
   element.focus();
 
-  // 将光标移到末尾
-  if (element.setSelectionRange) {
-    element.setSelectionRange(content.length, content.length);
-  } else if (element.contentEditable === 'true') {
+  // Move cursor to end
+  if ((element as any).setSelectionRange) {
+    (element as any).setSelectionRange(content.length, content.length);
+  } else if ((element as any).contentEditable === 'true') {
     const range = document.createRange();
     const selection = window.getSelection();
-    range.selectNodeContents(element);
-    range.collapse(false);
-    selection.removeAllRanges();
-    selection.addRange(range);
+    if (selection) {
+      range.selectNodeContents(element);
+      range.collapse(false);
+      selection.removeAllRanges();
+      selection.addRange(range);
+    }
   }
 
   await sleep(300);
   console.log('Chorus: Content filled successfully');
 }
 
-// 标准填充方式（使用事件）
-async function fillWithEvents(element, content) {
-  // 聚焦元素
+// Standard fill method (using events)
+async function fillWithEvents(element: HTMLElement, content: string): Promise<void> {
+  // Focus element
   element.focus();
   await sleep(100);
 
-  // 根据元素类型填充内容
-  if (element.contentEditable === 'true') {
-    // Contenteditable 元素（如 Claude）
+  // Fill content based on element type
+  if ((element as any).contentEditable === 'true') {
+    // Contenteditable element (like Claude)
     element.innerHTML = '';
     const textNode = document.createTextNode(content);
     element.appendChild(textNode);
 
-    // 触发多种事件以确保 React/Vue 检测到变化
+    // Trigger various events to ensure React/Vue detect changes
     const events = ['focus', 'input', 'change', 'keyup', 'keydown'];
-    events.forEach(eventType => {
+    events.forEach((eventType) => {
       const event = new Event(eventType, { bubbles: true });
       element.dispatchEvent(event);
     });
   } else {
-    // Textarea 或 Input 元素
+    // Textarea or Input element
+    (element as any).value = content;
 
-    // 方法 1: 直接设置 value
-    element.value = content;
-
-    // 方法 2: 使用 nativeInputValueSetter (React 应用兼容性)
+    // Use nativeInputValueSetter (React app compatibility)
     try {
-      const prototype = element.tagName === 'TEXTAREA' ? window.HTMLTextAreaElement.prototype : window.HTMLInputElement.prototype;
+      const prototype =
+        element.tagName === 'TEXTAREA'
+          ? window.HTMLTextAreaElement.prototype
+          : window.HTMLInputElement.prototype;
       const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
       if (descriptor && descriptor.set) {
         descriptor.set.call(element, content);
@@ -244,14 +271,14 @@ async function fillWithEvents(element, content) {
       console.warn('Chorus: nativeInputValueSetter failed', e);
     }
 
-    // 触发所有相关事件
+    // Trigger all relevant events
     const events = [
       new Event('focus', { bubbles: true }),
       new Event('input', { bubbles: true }),
       new Event('change', { bubbles: true }),
       new KeyboardEvent('keydown', { bubbles: true, key: 'a' }),
       new KeyboardEvent('keypress', { bubbles: true, key: 'a' }),
-      new KeyboardEvent('keyup', { bubbles: true, key: 'a' })
+      new KeyboardEvent('keyup', { bubbles: true, key: 'a' }),
     ];
 
     events.forEach((event, index) => {
@@ -260,25 +287,24 @@ async function fillWithEvents(element, content) {
   }
 }
 
-// 高效的 React/Vue 受控组件填充方案
-async function fillWithTypingSimulation(element, content) {
+// Efficient React/Vue controlled component fill solution
+async function fillWithTypingSimulation(element: HTMLElement, content: string): Promise<void> {
   element.focus();
   await sleep(200);
 
-  // 方案 1: 尝试使用 execCommand('insertText') - 最优雅且高效
-  // 这会正确触发受控组件的更新，且支持任意长度文本
+  // Method 1: Try using execCommand('insertText') - most elegant and efficient
   if (document.execCommand) {
     try {
-      // 先全选
-      element.select();
+      // Select all first
+      (element as any).select?.();
       await sleep(50);
 
-      // 使用 insertText 命令插入（这会替换选中的内容）
+      // Use insertText command to insert (this will replace selected content)
       const success = document.execCommand('insertText', false, content);
 
       if (success) {
         console.log('Chorus: Used execCommand insertText successfully');
-        // 触发必要的事件确保框架感知
+        // Trigger necessary events to ensure framework awareness
         element.dispatchEvent(new Event('input', { bubbles: true }));
         element.dispatchEvent(new Event('change', { bubbles: true }));
         return;
@@ -288,114 +314,125 @@ async function fillWithTypingSimulation(element, content) {
     }
   }
 
-  // 方案 2: 分段输入（比逐字符快 20-50 倍）
+  // Method 2: Chunked input (20-50x faster than character by character)
   console.log('Chorus: Using chunked input fallback');
 
-  // 先清空
-  if (element.contentEditable === 'true') {
+  // Clear first
+  if ((element as any).contentEditable === 'true') {
     element.innerHTML = '';
   } else {
-    element.value = '';
+    (element as any).value = '';
   }
   element.dispatchEvent(new Event('input', { bubbles: true }));
   await sleep(50);
 
-  // 分段大小：50 字符为一段
+  // Chunk size: 50 characters per chunk
   const chunkSize = 50;
-  const chunks = [];
+  const chunks: string[] = [];
   for (let i = 0; i < content.length; i += chunkSize) {
     chunks.push(content.slice(i, i + chunkSize));
   }
 
-  // 逐段输入（最多 20 段，再多的话直接塞剩余内容）
+  // Input chunk by chunk (max 20 chunks, rest goes in directly)
   for (let i = 0; i < chunks.length && i < 20; i++) {
     const chunk = chunks[i];
 
-    if (element.contentEditable === 'true') {
+    if ((element as any).contentEditable === 'true') {
       element.textContent += chunk;
     } else {
-      element.value += chunk;
+      (element as any).value += chunk;
     }
 
-    // 触发输入事件
-    element.dispatchEvent(new InputEvent('input', {
-      bubbles: true,
-      cancelable: true,
-      inputType: 'insertText',
-      data: chunk
-    }));
+    // Trigger input event
+    element.dispatchEvent(
+      new InputEvent('input', {
+        bubbles: true,
+        cancelable: true,
+        inputType: 'insertText',
+        data: chunk,
+      })
+    );
 
-    // 短停顿（10ms），感知不到但足够框架处理
+    // Short pause (10ms), imperceptible but enough for framework processing
     await sleep(10);
   }
 
-  // 如果还有剩余（超过 1000 字的情况），直接塞进去
+  // If remaining (case of >1000 characters), insert directly
   if (chunks.length > 20) {
     const remaining = chunks.slice(20).join('');
-    if (element.contentEditable === 'true') {
+    if ((element as any).contentEditable === 'true') {
       element.textContent += remaining;
     } else {
-      element.value += remaining;
+      (element as any).value += remaining;
     }
     element.dispatchEvent(new Event('input', { bubbles: true }));
   }
 
-  // 最后触发 change 事件
+  // Finally trigger change event
   await sleep(50);
   element.dispatchEvent(new Event('change', { bubbles: true }));
   console.log('Chorus: Chunked input completed');
 }
 
-// 延迟函数
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
-}
-
-// 自动发送消息
-async function autoSubmit(customSubmitSelector, inputElement, maxRetries = 12, retryDelay = 500) {
+// Auto-submit message
+async function autoSubmit(
+  customSubmitSelector?: string,
+  inputElement?: HTMLElement,
+  maxRetries = 12,
+  retryDelay = 500
+): Promise<{ success: boolean; message?: string; error?: string }> {
   const hostname = window.location.hostname;
   console.log(`Chorus: Auto-submit starting for ${hostname}`);
 
   for (let i = 0; i < maxRetries; i++) {
     console.log(`Chorus: Auto-submit attempt ${i + 1}/${maxRetries}`);
 
-    // 1. 如果提供了自定义选择器，优先使用
+    // 1. If custom selector provided, use it first
     if (customSubmitSelector) {
-      const button = document.querySelector(customSubmitSelector);
-      if (button && isVisible(button) && !button.disabled && !button.getAttribute('aria-disabled')) {
+      const button = document.querySelector(customSubmitSelector) as HTMLElement;
+      if (
+        button &&
+        isVisible(button) &&
+        !(button as any).disabled &&
+        !button.getAttribute('aria-disabled')
+      ) {
         console.log('Chorus: Found submit button with custom selector');
         await clickButton(button);
         return { success: true, message: 'Auto-submitted successfully' };
       }
     }
 
-    // 2. 尝试平台特定的选择器
+    // 2. Try platform-specific selectors
     const platformSelectors = getPlatformSpecificSelectors(hostname);
     for (const selector of platformSelectors) {
       try {
         const buttons = document.querySelectorAll(selector);
         for (const btn of buttons) {
-          if (isVisible(btn) && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
+          if (
+            isVisible(btn as HTMLElement) &&
+            !(btn as any).disabled &&
+            btn.getAttribute('aria-disabled') !== 'true'
+          ) {
             console.log('Chorus: Found platform-specific button:', selector);
-            await clickButton(btn);
+            await clickButton(btn as HTMLElement);
             return { success: true, message: 'Auto-submitted via platform selector' };
           }
         }
       } catch (e) {
-        // 忽略选择器错误
+        // Ignore selector errors
       }
     }
 
-    // 3. 尝试常见的发送按钮选择器
+    // 3. Try common send button selectors
     const commonSelectors = [
-      // ChatGPT 特定
+      // ChatGPT specific
       'button[data-testid="send-button"]:not([disabled])',
       'button[data-testid="send-button"]:not([aria-disabled="true"])',
 
-      // Claude 特定
+      // Claude specific
       'button[aria-label="Send message"]:not([disabled])',
 
-      // 通用选择器
+      // Generic selectors
       'button[data-testid="submit-button"]:not([disabled])',
       'button[aria-label*="send" i]:not([disabled])',
       'button[aria-label*="submit" i]:not([disabled])',
@@ -403,41 +440,55 @@ async function autoSubmit(customSubmitSelector, inputElement, maxRetries = 12, r
       'button[type="submit"]:not([disabled])',
       'button[class*="send" i]:not([disabled])',
 
-      // SVG 图标按钮
+      // SVG icon buttons
       'button svg[class*="send" i]',
       'button svg[class*="arrow-up" i]',
-      'button:has(> svg):not([disabled])'
+      'button:has(> svg):not([disabled])',
     ];
 
     for (const selector of commonSelectors) {
       try {
         const buttons = document.querySelectorAll(selector);
         for (const btn of buttons) {
-          if (isVisible(btn) && !btn.disabled && btn.getAttribute('aria-disabled') !== 'true') {
-            // 过滤掉一些明显不是发送按钮的
-            const text = btn.textContent.toLowerCase();
-            const ariaLabel = (btn.getAttribute('aria-label') || '').toLowerCase();
+          if (
+            isVisible(btn as HTMLElement) &&
+            !(btn as any).disabled &&
+            btn.getAttribute('aria-disabled') !== 'true'
+          ) {
+            // Filter out obviously non-send buttons
+            const text = btn.textContent?.toLowerCase() || '';
+            const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
 
-            // 跳过取消、关闭等按钮
-            if (text.includes('cancel') || text.includes('取消') ||
-                text.includes('close') || text.includes('关闭') ||
-                text.includes('stop') || text.includes('停止') ||
-                ariaLabel.includes('cancel') || ariaLabel.includes('close')) {
+            // Skip cancel, close buttons
+            if (
+              text.includes('cancel') ||
+              text.includes('取消') ||
+              text.includes('close') ||
+              text.includes('关闭') ||
+              text.includes('stop') ||
+              text.includes('停止') ||
+              ariaLabel.includes('cancel') ||
+              ariaLabel.includes('close')
+            ) {
               continue;
             }
 
             console.log('Chorus: Found submit button:', selector);
-            await clickButton(btn);
+            await clickButton(btn as HTMLElement);
             return { success: true, message: 'Auto-submitted successfully' };
           }
         }
       } catch (e) {
-        // 忽略选择器错误
+        // Ignore selector errors
       }
     }
 
-    // 4. 尝试通过 Enter 键发送（对 textarea 有效）
-    if (inputElement && (inputElement.tagName === 'TEXTAREA' || inputElement.contentEditable === 'true')) {
+    // 4. Try submitting with Enter key (effective for textarea)
+    if (
+      inputElement &&
+      (inputElement.tagName === 'TEXTAREA' ||
+        (inputElement as any).contentEditable === 'true')
+    ) {
       console.log('Chorus: Trying Enter key submission');
       const enterResult = await submitWithEnterKey(inputElement);
       if (enterResult.success) {
@@ -445,7 +496,7 @@ async function autoSubmit(customSubmitSelector, inputElement, maxRetries = 12, r
       }
     }
 
-    // 如果没找到且还有重试次数，等待后重试
+    // If not found and retries remain, wait and retry
     if (i < maxRetries - 1) {
       console.log(`Chorus: Waiting ${retryDelay}ms before retry...`);
       await sleep(retryDelay);
@@ -454,16 +505,15 @@ async function autoSubmit(customSubmitSelector, inputElement, maxRetries = 12, r
 
   return {
     success: false,
-    error: 'Send button not found or disabled after all retries'
+    error: 'Send button not found or disabled after all retries',
   };
 }
 
-// 获取平台特定的选择器
-function getPlatformSpecificSelectors(hostname) {
-  const selectors = [];
+// Get platform-specific selectors
+function getPlatformSpecificSelectors(hostname: string): string[] {
+  const selectors: string[] = [];
 
   if (hostname.includes('baidu.com')) {
-    // 文心一言特定选择器
     selectors.push(
       'button[type="submit"]:not([disabled])',
       '.send-btn:not([disabled])',
@@ -473,7 +523,6 @@ function getPlatformSpecificSelectors(hostname) {
   }
 
   if (hostname.includes('doubao.com')) {
-    // 豆包特定选择器
     selectors.push(
       'button[aria-label*="发送" i]:not([disabled])',
       'button[class*="send" i]:not([disabled])',
@@ -483,7 +532,6 @@ function getPlatformSpecificSelectors(hostname) {
   }
 
   if (hostname.includes('coze.cn')) {
-    // Coze 特定选择器
     selectors.push(
       'button[type="submit"]:not([disabled])',
       'button.send-button:not([disabled])'
@@ -493,13 +541,15 @@ function getPlatformSpecificSelectors(hostname) {
   return selectors;
 }
 
-// 使用 Enter 键发送（适用于 textarea 元素）
-async function submitWithEnterKey(element) {
+// Submit using Enter key (suitable for textarea elements)
+async function submitWithEnterKey(
+  element: HTMLElement
+): Promise<{ success: boolean; message?: string; error?: string }> {
   try {
     element.focus();
     await sleep(200);
 
-    // 模拟按 Enter 键（不包含 Shift，Shift+Enter 通常是换行）
+    // Simulate pressing Enter key (without Shift, Shift+Enter is usually line break)
     const keyOptions = {
       bubbles: true,
       cancelable: true,
@@ -507,46 +557,46 @@ async function submitWithEnterKey(element) {
       code: 'Enter',
       keyCode: 13,
       which: 13,
-      charCode: 13
+      charCode: 13,
     };
 
-    // 先触发 beforeinput 和 input（某些现代框架使用）
+    // First trigger beforeinput and input (some modern frameworks use this)
     const beforeInputEvent = new InputEvent('beforeinput', {
       bubbles: true,
       cancelable: true,
-      inputType: 'insertLineBreak'
+      inputType: 'insertLineBreak',
     });
     element.dispatchEvent(beforeInputEvent);
 
     await sleep(50);
 
-    // 触发 keydown
+    // Trigger keydown
     const keydownEvent = new KeyboardEvent('keydown', keyOptions);
     element.dispatchEvent(keydownEvent);
 
     await sleep(50);
 
-    // 触发 keypress（某些旧网站使用）
+    // Trigger keypress (some old websites use this)
     const keypressEvent = new KeyboardEvent('keypress', keyOptions);
     element.dispatchEvent(keypressEvent);
 
     await sleep(50);
 
-    // 触发 input 事件
+    // Trigger input event
     const inputEvent = new InputEvent('input', {
       bubbles: true,
       cancelable: true,
-      inputType: 'insertLineBreak'
+      inputType: 'insertLineBreak',
     });
     element.dispatchEvent(inputEvent);
 
     await sleep(50);
 
-    // 触发 keyup
+    // Trigger keyup
     const keyupEvent = new KeyboardEvent('keyup', keyOptions);
     element.dispatchEvent(keyupEvent);
 
-    // 最后再触发一次 change
+    // Finally trigger change again
     await sleep(50);
     element.dispatchEvent(new Event('change', { bubbles: true }));
 
@@ -556,34 +606,41 @@ async function submitWithEnterKey(element) {
     return { success: true, message: 'Submitted via Enter key' };
   } catch (error) {
     console.warn('Chorus: Enter key submission failed', error);
-    return { success: false, error: error.message };
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    };
   }
 }
 
-// 点击按钮
-async function clickButton(button) {
-  console.log('Chorus: Clicking button', button.className, button.getAttribute('data-testid'));
+// Click button
+async function clickButton(button: HTMLElement): Promise<void> {
+  console.log(
+    'Chorus: Clicking button',
+    button.className,
+    button.getAttribute('data-testid')
+  );
 
-  // 滚动到按钮可见
+  // Scroll button into view
   button.scrollIntoView({ behavior: 'instant', block: 'nearest' });
   await sleep(50);
 
-  // 聚焦按钮
+  // Focus button
   button.focus();
   await sleep(50);
 
-  // 获取按钮的位置信息
+  // Get button position
   const rect = button.getBoundingClientRect();
   const x = rect.left + rect.width / 2;
   const y = rect.top + rect.height / 2;
 
-  // 触发鼠标事件（模拟真实鼠标点击）
+  // Trigger mouse events (simulate real mouse click)
   const mouseOptions = {
     bubbles: true,
     cancelable: true,
     view: window,
     clientX: x,
-    clientY: y
+    clientY: y,
   };
 
   button.dispatchEvent(new MouseEvent('mousedown', mouseOptions));
@@ -592,17 +649,13 @@ async function clickButton(button) {
   await sleep(50);
   button.dispatchEvent(new MouseEvent('click', mouseOptions));
 
-  // 备用：原生 click
+  // Fallback: native click
   button.click();
 
   await sleep(100);
 }
 
-// 页面加载完成后的初始化
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', () => {
-    console.log('Chorus content script loaded');
-  });
-} else {
-  console.log('Chorus content script loaded');
+// Delay function
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
 }

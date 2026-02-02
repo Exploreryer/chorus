@@ -1,5 +1,12 @@
-// 国际化翻译文件
-const translations = {
+// Internationalization utility
+
+interface Translations {
+  [key: string]: {
+    [key: string]: string;
+  };
+}
+
+const translations: Translations = {
   en: {
     // Prompt section
     promptLabel: 'Question',
@@ -57,7 +64,7 @@ const translations = {
 
     // Button titles
     editTitleAttr: 'Edit',
-    deleteTitleAttr: 'Delete'
+    deleteTitleAttr: 'Delete',
   },
   zh: {
     // Prompt section
@@ -116,75 +123,80 @@ const translations = {
 
     // Button titles
     editTitleAttr: '编辑',
-    deleteTitleAttr: '删除'
-  }
+    deleteTitleAttr: '删除',
+  },
 };
 
-// 当前语言 - 默认为英文
-let currentLang = 'en';
+// Current language - default to English
+let lang = 'en';
 
-// 获取翻译
-function t(key, params = {}) {
-  const translation = translations[currentLang]?.[key] || translations.en[key] || key;
-  
-  // 替换参数
+// Get translation
+export function t(key: string, params: Record<string, string> = {}): string {
+  const translation = translations[lang]?.[key] || translations.en[key] || key;
+
+  // Replace parameters
   if (params && Object.keys(params).length > 0) {
     return translation.replace(/\{(\w+)\}/g, (match, paramKey) => {
       return params[paramKey] !== undefined ? params[paramKey] : match;
     });
   }
-  
+
   return translation;
 }
 
-// 设置语言
-async function setLanguage(lang) {
-  if (translations[lang]) {
-    currentLang = lang;
-    await chrome.storage.local.set({ language: lang });
+// Set language
+export async function setLanguage(newLang: string): Promise<void> {
+  if (translations[newLang]) {
+    lang = newLang;
+    await chrome.storage.local.set({ language: newLang });
     updateUI();
   }
 }
 
-// 初始化语言
-async function initLanguage() {
+// Initialize language
+export async function initLanguage(): Promise<void> {
   const result = await chrome.storage.local.get(['language']);
   if (result.language && translations[result.language]) {
-    currentLang = result.language;
+    lang = result.language;
   }
-  // 如果没有保存的语言设置，默认使用英文（不根据浏览器自动切换）
+  // If no saved language setting, default to English (don't auto-switch based on browser)
   updateUI();
 }
 
-// 更新UI文本
-function updateUI() {
-  // 更新HTML中的文本
-  const elements = {
-    'subtitle': '.subtitle',
-    'promptLabel': 'label[for="promptInput"]',
-    'clearBtn': '#clearBtn',
-    'promptPlaceholder': '#promptInput',
-    'selectProducts': '.products-section .section-header label',
-    'manageBtn': '#manageBtn',
-    'noProducts': '#emptyState p',
-    'addFirstBtn': '#addFirstBtn',
-    'distributeBtn': '#distributeBtn',
-    'manageTitle': '#manageModal h2',
-    'addProductBtn': '#addProductBtn span',
-    'editTitle': '#editModalTitle',
-    'productNameLabel': 'label[for="productName"]',
-    'productUrlLabel': 'label[for="productUrl"]',
-    'productSelectorLabel': 'label[for="productSelector"]',
-    'productSubmitSelectorLabel': 'label[for="productSubmitSelector"]',
-    'cancelBtn': '#cancelEditBtn',
-    'saveBtn': '#saveProductBtn'
+// Get current language
+export function currentLang(): string {
+  return lang;
+}
+
+// Update UI text
+function updateUI(): void {
+  // Update HTML text
+  const elements: Record<string, string> = {
+    subtitle: '.subtitle',
+    promptLabel: 'label[for="promptInput"]',
+    clearBtn: '#clearBtn',
+    promptPlaceholder: '#promptInput',
+    selectProducts: '.products-section .section-header label',
+    manageBtn: '#manageBtn',
+    noProducts: '#emptyState p',
+    addFirstBtn: '#addFirstBtn',
+    distributeBtn: '#distributeBtn',
+    manageTitle: '#manageModal h2',
+    addProductBtn: '#addProductBtn span',
+    editTitle: '#editModalTitle',
+    productNameLabel: 'label[for="productName"]',
+    productUrlLabel: 'label[for="productUrl"]',
+    productSelectorLabel: 'label[for="productSelector"]',
+    productSubmitSelectorLabel: 'label[for="productSubmitSelector"]',
+    cancelBtn: '#cancelEditBtn',
+    saveBtn: '#saveProductBtn',
   };
-  
+
   for (const [key, selector] of Object.entries(elements)) {
     const element = document.querySelector(selector);
     if (element) {
       if (key === 'promptPlaceholder') {
-        element.placeholder = t(key);
+        (element as HTMLTextAreaElement).placeholder = t(key);
       } else if (key === 'addProductBtn') {
         element.textContent = t(key);
       } else {
@@ -192,24 +204,24 @@ function updateUI() {
       }
     }
   }
-  
-  // 更新placeholder
-  const promptInput = document.getElementById('promptInput');
+
+  // Update placeholders
+  const promptInput = document.getElementById('promptInput') as HTMLTextAreaElement;
   if (promptInput) {
     promptInput.placeholder = t('promptPlaceholder');
   }
-  
-  const productName = document.getElementById('productName');
+
+  const productName = document.getElementById('productName') as HTMLInputElement;
   if (productName) {
     productName.placeholder = t('productNamePlaceholder');
   }
-  
-  const productUrl = document.getElementById('productUrl');
+
+  const productUrl = document.getElementById('productUrl') as HTMLInputElement;
   if (productUrl) {
     productUrl.placeholder = t('productUrlPlaceholder');
   }
-  
-  const productSelector = document.getElementById('productSelector');
+
+  const productSelector = document.getElementById('productSelector') as HTMLInputElement;
   if (productSelector) {
     productSelector.placeholder = t('productSelectorPlaceholder');
     const hint = productSelector.nextElementSibling;
@@ -217,8 +229,10 @@ function updateUI() {
       hint.textContent = t('productSelectorHint');
     }
   }
-  
-  const productSubmitSelector = document.getElementById('productSubmitSelector');
+
+  const productSubmitSelector = document.getElementById(
+    'productSubmitSelector'
+  ) as HTMLInputElement;
   if (productSubmitSelector) {
     productSubmitSelector.placeholder = t('productSubmitSelectorPlaceholder');
     const hint = productSubmitSelector.nextElementSibling;
@@ -226,27 +240,22 @@ function updateUI() {
       hint.textContent = t('productSubmitSelectorHint');
     }
   }
-  
-  // 更新HTML lang属性
-  document.documentElement.lang = currentLang === 'zh' ? 'zh-CN' : 'en';
-  
-  // 更新语言切换按钮
+
+  // Update HTML lang attribute
+  document.documentElement.lang = lang === 'zh' ? 'zh-CN' : 'en';
+
+  // Update language switch button
   const langBtn = document.getElementById('langBtn');
   if (langBtn) {
-    langBtn.textContent = currentLang === 'zh' ? '中/EN' : 'EN/中';
+    langBtn.textContent = lang === 'zh' ? '中/EN' : 'EN/中';
   }
-  
-  // 更新取消按钮
-  const cancelBtn = document.getElementById('cancelBtn');
+
+  // Update cancel button
+  const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
   if (cancelBtn && cancelBtn.style.display !== 'none') {
     cancelBtn.textContent = t('cancelProgressBtn');
   }
-  
-  // 触发自定义事件，通知其他脚本更新
-  document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang: currentLang } }));
-}
 
-// 导出供其他脚本使用
-if (typeof module !== 'undefined' && module.exports) {
-  module.exports = { t, setLanguage, initLanguage, currentLang };
+  // Trigger custom event to notify other scripts
+  document.dispatchEvent(new CustomEvent('languageChanged', { detail: { lang } }));
 }
