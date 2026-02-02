@@ -81,15 +81,16 @@ jobs:
           # 添加版本号和日期
           VERSION="${{ steps.get_version.outputs.version }}"
           DATE=$(date +"%Y-%m-%d")
-          FULL_CHANGELOG="## Version $VERSION ($DATE)
-
-$CHANGELOG
-
----
-*此版本由 GitHub Actions 自动生成*"
           
-          # 保存到文件
-          echo "$FULL_CHANGELOG" > CHANGELOG_TEMP.md
+          # 使用 heredoc 创建 changelog 内容
+          cat > CHANGELOG_TEMP.md << EOF
+          ## Version $VERSION ($DATE)
+          
+          $CHANGELOG
+          
+          ---
+          *此版本由 GitHub Actions 自动生成*
+          EOF
           
           # 更新或创建 CHANGELOG.md
           if [ -f CHANGELOG.md ]; then
@@ -103,9 +104,11 @@ $CHANGELOG
           fi
           
           # 将 changelog 内容保存到输出（用于 release notes）
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$FULL_CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
+          {
+            echo "changelog<<EOF"
+            cat CHANGELOG_TEMP.md
+            echo "EOF"
+          } >> $GITHUB_OUTPUT
       
       - name: Package extension
         if: steps.check_release.outputs.exists == 'false'
