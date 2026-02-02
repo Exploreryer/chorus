@@ -1,0 +1,39 @@
+{
+  "manifest_version": 3,
+  "name": "Chorus - AI Prompt Comparison Assistant",
+  "version": "1.0.0",
+  "description": "One-click synchronous distribution of Prompts to multiple AI conversation products for easy horizontal comparison evaluation",
+  "permissions": [
+    "storage",
+    "tabs",
+    "tabGroups",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://*/*",
+    "http://*/*"
+  ],
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "background": {
+    "service_worker": "js/background.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["js/content.js"],
+      "run_at": "document_idle"
+    }
+  ]
+}
