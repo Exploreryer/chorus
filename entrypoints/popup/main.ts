@@ -1,12 +1,20 @@
 import './style.css';
-import type { Product, DistributionProgress } from '../../types';
+import type {
+  Product,
+  DistributionTask,
+  DistributionResult,
+  DistributeResponse,
+  DistributionProgressMessage,
+  DistributionCompleteMessage,
+  DistributionCancelledMessage,
+} from '../../types';
 import { defaultProducts } from '../../utils/defaultProducts';
 import { t, setLanguage, initLanguage, currentLang } from '../../utils/i18n';
 
 // Global state
 let products: Product[] = [];
 let editingProductId: string | null = null;
-let distributionCancelled = false;
+let currentTaskId: string | null = null;
 
 // DOM elements
 const promptInput = document.getElementById('promptInput') as HTMLTextAreaElement;
@@ -41,32 +49,101 @@ async function init() {
 
 // Restore progress state
 async function restoreProgressState() {
-  const result = await chrome.storage.local.get([
-    'distributionInProgress',
-    'distributionProgress',
-  ]);
+  const result = (await chrome.storage.local.get(['distributionTask'])) as {
+    distributionTask?: DistributionTask;
+  };
 
-  if (result.distributionInProgress && result.distributionProgress) {
-    const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-    const progressFill = document.getElementById('progressFill') as HTMLDivElement;
-    const progressText = document.getElementById('progressText') as HTMLDivElement;
-
-    const progress = result.distributionProgress as DistributionProgress;
-    progressSection.style.display = 'block';
-    const percent = (progress.completed / progress.total) * 100;
-    progressFill.style.width = `${percent}%`;
-    progressText.textContent = t('progressText', {
-      completed: progress.completed.toString(),
-      total: progress.total.toString(),
-    });
-
+  const task = result.distributionTask;
+  if (task && task.inProgress) {
+    currentTaskId = task.id;
+    showProgress(task.completed, task.total);
     distributeBtn.disabled = true;
+    if (cancelBtn) {
+      cancelBtn.style.display = 'block';
+      cancelBtn.textContent = t('cancelProgressBtn');
+    }
+    chrome.runtime.onMessage.addListener(distributionMessageListener);
+  }
+}
+
+// Show progress bar
+function showProgress(completed: number, total: number): void {
+  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
+  const progressFill = document.getElementById('progressFill') as HTMLDivElement;
+  const progressText = document.getElementById('progressText') as HTMLDivElement;
+
+  progressSection.style.display = 'block';
+  const percent = total > 0 ? (completed / total) * 100 : 0;
+  progressFill.style.width = `${percent}%`;
+  progressText.textContent = t('progressText', {
+    completed: completed.toString(),
+    total: total.toString(),
+  });
+}
+
+// Hide progress bar and reset UI
+function hideProgress(): void {
+  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
+  progressSection.style.display = 'none';
+  if (cancelBtn) {
+    cancelBtn.style.display = 'none';
+  }
+  distributeBtn.disabled = false;
+  updateDistributeButton();
+}
+
+// Handle distribution messages from background
+function distributionMessageListener(
+  message: DistributionProgressMessage | DistributionCompleteMessage | DistributionCancelledMessage
+): void {
+  if (message.taskId !== currentTaskId) return;
+
+  if (message.action === 'distributionProgress') {
+    showProgress(message.completed, message.total);
+  } else if (message.action === 'distributionComplete') {
+    chrome.runtime.onMessage.removeListener(distributionMessageListener);
+    currentTaskId = null;
+    finalizeDistribution(message.results);
+  } else if (message.action === 'distributionCancelled') {
+    chrome.runtime.onMessage.removeListener(distributionMessageListener);
+    currentTaskId = null;
+    hideProgress();
+    showStatus(t('statusDistributeCancelled'), 'info');
+  }
+}
+
+// Finalize distribution UI based on results
+function finalizeDistribution(results: DistributionResult[]): void {
+  const successCount = results.filter((r) => r.success).length;
+  const failCount = results.length - successCount;
+
+  const progressFill = document.getElementById('progressFill') as HTMLDivElement;
+  progressFill.style.width = '100%';
+
+  if (cancelBtn) {
+    cancelBtn.style.display = 'none';
+  }
+
+  setTimeout(() => {
+    hideProgress();
+  }, 2000);
+
+  if (failCount === 0) {
+    showStatus(t('statusDistributeSuccess', { count: successCount.toString() }), 'success');
+  } else {
+    showStatus(
+      t('statusDistributePartial', {
+        success: successCount.toString(),
+        fail: failCount.toString(),
+      }),
+      'error'
+    );
   }
 }
 
 // Load products list
 async function loadProducts() {
-  const result = await chrome.storage.local.get(['products']);
+  const result = (await chrome.storage.local.get(['products'])) as { products?: Product[] };
   if (result.products && result.products.length > 0) {
     products = result.products;
   } else {
@@ -83,7 +160,17 @@ async function saveProducts() {
 
 // Generate unique ID
 function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+  return Date.now().toString(36) + Math.random().toString(36).substring(2);
+}
+
+// Validate that a URL is safe to open
+function isAllowedUrl(url: string): boolean {
+  try {
+    const parsed = new URL(url);
+    return parsed.protocol === 'http:' || parsed.protocol === 'https:';
+  } catch {
+    return false;
+  }
 }
 
 // Render products list
@@ -315,6 +402,11 @@ async function handleProductFormSubmit(e: Event) {
     return;
   }
 
+  if (!isAllowedUrl(url)) {
+    showStatus(t('statusInvalidUrl'), 'error');
+    return;
+  }
+
   if (editingProductId) {
     // Edit existing product
     const product = products.find((p) => p.id === editingProductId);
@@ -373,149 +465,54 @@ async function handleDistribute() {
     return;
   }
 
-  // Reset cancel flag
-  distributionCancelled = false;
-
-  // Disable button and show progress bar
   distributeBtn.disabled = true;
-
-  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-  const progressFill = document.getElementById('progressFill') as HTMLDivElement;
-  const progressText = document.getElementById('progressText') as HTMLDivElement;
-
-  progressSection.style.display = 'block';
-  progressFill.style.width = '0%';
-  progressText.textContent = t('progressText', {
-    completed: '0',
-    total: enabledProducts.length.toString(),
-  });
+  showProgress(0, enabledProducts.length);
   if (cancelBtn) {
     cancelBtn.style.display = 'block';
     cancelBtn.textContent = t('cancelProgressBtn');
   }
 
+  chrome.runtime.onMessage.addListener(distributionMessageListener);
+
   try {
-    // Listen for progress updates
-    const progressListener = (message: any) => {
-      if (message.action === 'distributionProgress') {
-        const percent = (message.completed / message.total) * 100;
-        progressFill.style.width = `${percent}%`;
-        progressText.textContent = t('progressText', {
-          completed: message.completed.toString(),
-          total: message.total.toString(),
-        });
-      } else if (message.action === 'distributionCancelled') {
-        progressSection.style.display = 'none';
-        if (cancelBtn) {
-          cancelBtn.style.display = 'none';
-        }
-        showStatus(t('statusDistributeCancelled'), 'info');
-        distributeBtn.disabled = false;
-        updateDistributeButton();
-      }
-    };
+    const response = (await chrome.runtime.sendMessage({
+      action: 'distribute',
+      prompt,
+      products: enabledProducts,
+    })) as DistributeResponse;
 
-    chrome.runtime.onMessage.addListener(progressListener);
-
-    let response: any;
-    try {
-      // Send message to background script
-      response = await chrome.runtime.sendMessage({
-        action: 'distribute',
-        prompt,
-        products: enabledProducts,
-      });
-    } finally {
-      chrome.runtime.onMessage.removeListener(progressListener);
-    }
-
-    // Check if cancelled
-    if (distributionCancelled) {
+    if (!response.success || !response.taskId) {
+      chrome.runtime.onMessage.removeListener(distributionMessageListener);
+      hideProgress();
+      showStatus(
+        t('statusDistributeFailed', { error: response.error || 'Unknown error' }),
+        'error'
+      );
       return;
     }
 
-    if (response && response.success) {
-      const successCount = response.results.filter((r: any) => r.success).length;
-      const failCount = response.results.length - successCount;
-
-      // Complete progress
-      progressFill.style.width = '100%';
-      progressText.textContent = t('progressText', {
-        completed: enabledProducts.length.toString(),
-        total: enabledProducts.length.toString(),
-      });
-
-      // Hide cancel button
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-
-      // Hide progress bar after 2 seconds
-      setTimeout(() => {
-        progressSection.style.display = 'none';
-      }, 2000);
-
-      if (failCount === 0) {
-        showStatus(t('statusDistributeSuccess', { count: successCount.toString() }), 'success');
-      } else {
-        showStatus(
-          t('statusDistributePartial', {
-            success: successCount.toString(),
-            fail: failCount.toString(),
-          }),
-          'error'
-        );
-      }
-    } else if (response && response.cancelled) {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(t('statusDistributeCancelled'), 'info');
-    } else {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(
-        t('statusDistributeFailed', { error: response?.error || 'Unknown error' }),
-        'error'
-      );
-    }
+    currentTaskId = response.taskId;
   } catch (error) {
-    if (!distributionCancelled) {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(
-        t('statusDistributeFailed', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }),
-        'error'
-      );
-    }
-  } finally {
-    if (!distributionCancelled) {
-      distributeBtn.disabled = false;
-      updateDistributeButton();
-    }
+    chrome.runtime.onMessage.removeListener(distributionMessageListener);
+    hideProgress();
+    showStatus(
+      t('statusDistributeFailed', {
+        error: error instanceof Error ? error.message : 'Unknown error',
+      }),
+      'error'
+    );
   }
 }
 
 // Cancel distribution
 async function cancelDistribution() {
-  distributionCancelled = true;
-  await chrome.runtime.sendMessage({ action: 'cancelDistribution' });
-  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-  const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
-  progressSection.style.display = 'none';
-  if (cancelBtn) {
-    cancelBtn.style.display = 'none';
-  }
-  distributeBtn.disabled = false;
-  updateDistributeButton();
+  if (!currentTaskId) return;
+  const taskId = currentTaskId;
+  currentTaskId = null;
+  chrome.runtime.onMessage.removeListener(distributionMessageListener);
+  hideProgress();
   showStatus(t('statusDistributeCancelled'), 'info');
+  await chrome.runtime.sendMessage({ action: 'cancelDistribution', taskId });
 }
 
 // Show status message

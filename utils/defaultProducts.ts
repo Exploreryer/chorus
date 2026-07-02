@@ -1,7 +1,6 @@
 import type { Product } from '../types';
 
 export const defaultProducts: Product[] = [
-  // Agent products
   {
     id: 'manus',
     name: 'Manus',
@@ -11,11 +10,11 @@ export const defaultProducts: Product[] = [
     enabled: false,
   },
   {
-    id: 'anygen',
-    name: 'Anygen',
-    url: 'https://www.anygen.io/',
+    id: 'deepseek',
+    name: 'DeepSeek',
+    url: 'https://chat.deepseek.com',
     selector: 'textarea',
-    submitSelector: 'button[aria-label*="send" i], button[aria-label*="发送" i]',
+    submitSelector: 'button[aria-label*="send" i]',
     enabled: false,
   },
   {
@@ -35,7 +34,6 @@ export const defaultProducts: Product[] = [
     enabled: false,
   },
 
-  // Chat products
   {
     id: 'chatgpt',
     name: 'ChatGPT',
@@ -111,7 +109,7 @@ export const defaultProducts: Product[] = [
   {
     id: 'autoglm',
     name: 'AutoGLM',
-    url: 'https://chatglm.cn',
+    url: 'https://autoglm.zhipuai.cn',
     selector: 'textarea',
     submitSelector: 'button[aria-label*="send" i]',
     enabled: false,

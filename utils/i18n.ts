@@ -37,6 +37,7 @@ const translations: Translations = {
     statusDistributePartial: 'Sent: {success}, Failed: {fail}',
     statusDistributeFailed: 'Failed: {error}',
     statusDistributeCancelled: 'Cancelled',
+    statusInvalidUrl: 'URL must start with http:// or https://',
 
     // Manage modal
     manageTitle: 'Manage Products',
@@ -96,6 +97,7 @@ const translations: Translations = {
     statusDistributePartial: '成功 {success}，失败 {fail}',
     statusDistributeFailed: '发送失败：{error}',
     statusDistributeCancelled: '已取消',
+    statusInvalidUrl: 'URL 必须以 http:// 或 https:// 开头',
 
     // Manage modal
     manageTitle: '管理产品',
@@ -155,7 +157,7 @@ export async function setLanguage(newLang: string): Promise<void> {
 
 // Initialize language
 export async function initLanguage(): Promise<void> {
-  const result = await chrome.storage.local.get(['language']);
+  const result = (await chrome.storage.local.get(['language'])) as { language?: string };
   if (result.language && translations[result.language]) {
     lang = result.language;
   }

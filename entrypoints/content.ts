@@ -427,7 +427,6 @@ async function autoSubmit(
     const commonSelectors = [
       // ChatGPT specific
       'button[data-testid="send-button"]:not([disabled])',
-      'button[data-testid="send-button"]:not([aria-disabled="true"])',
 
       // Claude specific
       'button[aria-label="Send message"]:not([disabled])',
@@ -440,9 +439,9 @@ async function autoSubmit(
       'button[type="submit"]:not([disabled])',
       'button[class*="send" i]:not([disabled])',
 
-      // SVG icon buttons
-      'button svg[class*="send" i]',
-      'button svg[class*="arrow-up" i]',
+      // SVG icon buttons (select the button, not the SVG)
+      'button:has(> svg[class*="send" i]):not([disabled])',
+      'button:has(> svg[class*="arrow-up" i]):not([disabled])',
       'button:has(> svg):not([disabled])',
     ];
 
@@ -455,20 +454,32 @@ async function autoSubmit(
             !(btn as any).disabled &&
             btn.getAttribute('aria-disabled') !== 'true'
           ) {
-            // Filter out obviously non-send buttons
+            // Filter out obviously non-send buttons and require a positive send cue
             const text = btn.textContent?.toLowerCase() || '';
             const ariaLabel = btn.getAttribute('aria-label')?.toLowerCase() || '';
+            const title = btn.getAttribute('title')?.toLowerCase() || '';
 
-            // Skip cancel, close buttons
+            // Skip cancel, close, stop, edit, delete, menu, settings, more buttons
+            const negativeTerms = /cancel|取消|close|关闭|stop|停止|edit|编辑|delete|删除|menu|菜单|settings|设置|more|更多/;
             if (
-              text.includes('cancel') ||
-              text.includes('取消') ||
-              text.includes('close') ||
-              text.includes('关闭') ||
-              text.includes('stop') ||
-              text.includes('停止') ||
-              ariaLabel.includes('cancel') ||
-              ariaLabel.includes('close')
+              negativeTerms.test(text) ||
+              negativeTerms.test(ariaLabel) ||
+              negativeTerms.test(title)
+            ) {
+              continue;
+            }
+
+            // Require at least one positive send cue
+            const hasSendIcon =
+              btn.querySelector(
+                'svg[class*="send" i], svg[class*="arrow-up" i], svg[class*="paper-plane" i]'
+              ) !== null;
+            const positiveTerms = /send|submit|arrow-up|arrow_up|paper-plane|paper_plane|发送|提交|确认/;
+            if (
+              !positiveTerms.test(text) &&
+              !positiveTerms.test(ariaLabel) &&
+              !positiveTerms.test(title) &&
+              !hasSendIcon
             ) {
               continue;
             }

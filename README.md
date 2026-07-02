@@ -73,13 +73,10 @@ If auto-fill fails for a product, configure custom CSS selectors:
 
 ## 🤖 Supported AI Products (Presets)
 
-**Agent Products:**
-- Manus, Anygen, Coze, Minimax
-
-**Chat Products:**
 - ChatGPT, Claude, Gemini, Perplexity, Grok
-- Kimi, Doubao, ERNIE Bot, Tongyi Qwen
-- ChatGLM, Metaso, Genspark, and more
+- DeepSeek, Kimi, Doubao, ERNIE Bot, Tongyi Qwen
+- ChatGLM, Metaso, Genspark, AutoGLM
+- Manus, Coze, Minimax, and more
 
 ## 🛠️ Development
 

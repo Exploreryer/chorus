@@ -10,7 +10,8 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "postbuild": "wxt zip"
+    "postbuild": "wxt zip",
+    "postinstall": "wxt prepare"
   },
   "repository": {
     "type": "git",
@@ -32,6 +33,11 @@
     "@types/chrome": "^0.1.36",
     "typescript": "^5.9.3",
     "vite": "^7.3.1",
-    "wxt": "^0.20.13"
+    "wxt": "^0.20.27"
+  },
+  "overrides": {
+    "shell-quote": "^1.8.4",
+    "tmp": "^0.2.6",
+    "uuid": "^11.1.1"
   }
 }

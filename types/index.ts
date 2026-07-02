@@ -41,13 +41,42 @@ export interface DistributeRequest {
 
 export interface CancelDistributionRequest {
   action: 'cancelDistribution';
+  taskId: string;
 }
 
 export interface DistributeResponse {
   success?: boolean;
+  taskId?: string;
   cancelled?: boolean;
   results?: DistributionResult[];
   error?: string;
+}
+
+export interface DistributionTask {
+  id: string;
+  tabIds: number[];
+  total: number;
+  completed: number;
+  cancelled: boolean;
+  inProgress: boolean;
+}
+
+export interface DistributionProgressMessage {
+  action: 'distributionProgress';
+  taskId: string;
+  completed: number;
+  total: number;
+}
+
+export interface DistributionCompleteMessage {
+  action: 'distributionComplete';
+  taskId: string;
+  results: DistributionResult[];
+}
+
+export interface DistributionCancelledMessage {
+  action: 'distributionCancelled';
+  taskId: string;
 }
 
 export interface DistributionState {

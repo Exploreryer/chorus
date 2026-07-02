@@ -212,7 +212,7 @@ npm run build
 # Reload extension with .output/chrome-mv3/
 
 # 6. Create release
-# Use .output/chorus-1.0.0-chrome.zip
+# Use .output/chorus-1.0.2-chrome.zip
 ```
 
 ---
