@@ -1,6 +1,9 @@
 name: Validate Extension
 
 on:
+  push:
+    branches:
+      - agent/growth-focused-v1-1
   pull_request:
     branches:
       - main
