@@ -1,540 +1,308 @@
 import './style.css';
-import type { Product, DistributionProgress } from '../../types';
+import type { DistributeResponse, DistributionResult, ProductId } from '../../types';
 import { defaultProducts } from '../../utils/defaultProducts';
-import { t, setLanguage, initLanguage, currentLang } from '../../utils/i18n';
+import { currentLanguage, initLanguage, t, toggleLanguage } from '../../utils/i18n';
+import { track } from '../../utils/analytics';
 
-// Global state
-let products: Product[] = [];
-let editingProductId: string | null = null;
-let distributionCancelled = false;
+const DEFAULT_SELECTION = defaultProducts
+  .filter((product) => product.defaultEnabled)
+  .map((product) => product.id);
 
-// DOM elements
-const promptInput = document.getElementById('promptInput') as HTMLTextAreaElement;
-const clearBtn = document.getElementById('clearBtn') as HTMLButtonElement;
-const productsList = document.getElementById('productsList') as HTMLDivElement;
-const emptyState = document.getElementById('emptyState') as HTMLDivElement;
-const distributeBtn = document.getElementById('distributeBtn') as HTMLButtonElement;
-const statusMsg = document.getElementById('statusMsg') as HTMLDivElement;
-const manageBtn = document.getElementById('manageBtn') as HTMLButtonElement;
-const manageModal = document.getElementById('manageModal') as HTMLDivElement;
-const closeModal = document.getElementById('closeModal') as HTMLButtonElement;
-const manageProductsList = document.getElementById('manageProductsList') as HTMLDivElement;
-const addProductBtn = document.getElementById('addProductBtn') as HTMLButtonElement;
-const addFirstBtn = document.getElementById('addFirstBtn') as HTMLButtonElement;
-const editModal = document.getElementById('editModal') as HTMLDivElement;
-const closeEditModal = document.getElementById('closeEditModal') as HTMLButtonElement;
-const productForm = document.getElementById('productForm') as HTMLFormElement;
-const cancelEditBtn = document.getElementById('cancelEditBtn') as HTMLButtonElement;
-const editModalTitle = document.getElementById('editModalTitle') as HTMLHeadingElement;
-const langBtn = document.getElementById('langBtn') as HTMLButtonElement;
-const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
+const elements = {
+  tagline: document.getElementById('tagline') as HTMLParagraphElement,
+  languageButton: document.getElementById('languageButton') as HTMLButtonElement,
+  promptLabel: document.getElementById('promptLabel') as HTMLLabelElement,
+  promptInput: document.getElementById('promptInput') as HTMLTextAreaElement,
+  clearButton: document.getElementById('clearButton') as HTMLButtonElement,
+  modelsLabel: document.getElementById('modelsLabel') as HTMLHeadingElement,
+  modelsHint: document.getElementById('modelsHint') as HTMLParagraphElement,
+  modelsGrid: document.getElementById('modelsGrid') as HTMLDivElement,
+  progressPanel: document.getElementById('progressPanel') as HTMLDivElement,
+  progressText: document.getElementById('progressText') as HTMLSpanElement,
+  progressBar: document.getElementById('progressBar') as HTMLDivElement,
+  cancelButton: document.getElementById('cancelButton') as HTMLButtonElement,
+  resultsPanel: document.getElementById('resultsPanel') as HTMLElement,
+  resultsTitle: document.getElementById('resultsTitle') as HTMLHeadingElement,
+  resultsList: document.getElementById('resultsList') as HTMLDivElement,
+  retryButton: document.getElementById('retryButton') as HTMLButtonElement,
+  inlineMessage: document.getElementById('inlineMessage') as HTMLParagraphElement,
+  askButton: document.getElementById('askButton') as HTMLButtonElement,
+  privacyNote: document.getElementById('privacyNote') as HTMLParagraphElement,
+};
 
-// Initialize
-async function init() {
+let selectedProductIds = new Set<ProductId>();
+let isSending = false;
+let lastFailedProductIds: ProductId[] = [];
+
+async function init(): Promise<void> {
   await initLanguage();
-  await loadProducts();
-  renderProductsList();
-  updateDistributeButton();
-  await restoreProgressState();
+  selectedProductIds = new Set(await loadSelection());
   bindEvents();
+  renderAll();
+  await restoreProgress();
+  await track('popup_opened');
 }
 
-// Restore progress state
-async function restoreProgressState() {
-  const result = await chrome.storage.local.get([
-    'distributionInProgress',
-    'distributionProgress',
-  ]);
+async function loadSelection(): Promise<ProductId[]> {
+  const stored = await chrome.storage.local.get(['selectedProductIds', 'products']);
 
-  if (result.distributionInProgress && result.distributionProgress) {
-    const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-    const progressFill = document.getElementById('progressFill') as HTMLDivElement;
-    const progressText = document.getElementById('progressText') as HTMLDivElement;
-
-    const progress = result.distributionProgress as DistributionProgress;
-    progressSection.style.display = 'block';
-    const percent = (progress.completed / progress.total) * 100;
-    progressFill.style.width = `${percent}%`;
-    progressText.textContent = t('progressText', {
-      completed: progress.completed.toString(),
-      total: progress.total.toString(),
-    });
-
-    distributeBtn.disabled = true;
-  }
-}
-
-// Load products list
-async function loadProducts() {
-  const result = await chrome.storage.local.get(['products']);
-  if (result.products && result.products.length > 0) {
-    products = result.products;
-  } else {
-    // First time use, initialize default products list
-    products = defaultProducts.map((p) => ({ ...p }));
-    await saveProducts();
-  }
-}
-
-// Save products list
-async function saveProducts() {
-  await chrome.storage.local.set({ products });
-}
-
-// Generate unique ID
-function generateId(): string {
-  return Date.now().toString(36) + Math.random().toString(36).substr(2);
-}
-
-// Render products list
-function renderProductsList() {
-  if (products.length === 0) {
-    productsList.style.display = 'none';
-    emptyState.style.display = 'block';
-    return;
+  if (Array.isArray(stored.selectedProductIds)) {
+    const supported = stored.selectedProductIds.filter((id: string) =>
+      defaultProducts.some((product) => product.id === id)
+    ) as ProductId[];
+    if (supported.length > 0) return supported;
   }
 
-  productsList.style.display = 'block';
-  emptyState.style.display = 'none';
-
-  productsList.innerHTML = products
-    .map(
-      (product) => `
-    <div class="product-item" data-id="${product.id}">
-      <input type="checkbox" id="product-${product.id}" ${product.enabled ? 'checked' : ''}>
-      <div class="product-info">
-        <div class="product-name">${escapeHtml(product.name)}</div>
-      </div>
-    </div>
-  `
-    )
-    .join('');
-
-  // Bind click events: clicking entire row toggles checkbox
-  products.forEach((product) => {
-    const item = document.querySelector(`.product-item[data-id="${product.id}"]`);
-    const checkbox = document.getElementById(`product-${product.id}`) as HTMLInputElement;
-
-    if (item && checkbox) {
-      // Click entire row to toggle
-      item.addEventListener('click', async (e) => {
-        // If clicking checkbox itself, let checkbox's change event handle it
-        if ((e.target as HTMLElement).tagName === 'INPUT') return;
-
-        // Toggle checkbox state
-        checkbox.checked = !checkbox.checked;
-        product.enabled = checkbox.checked;
-        await saveProducts();
-        updateDistributeButton();
-      });
-
-      // Checkbox change event
-      checkbox.addEventListener('change', async (e) => {
-        product.enabled = (e.target as HTMLInputElement).checked;
-        await saveProducts();
-        updateDistributeButton();
-      });
+  if (Array.isArray(stored.products)) {
+    const migrated = stored.products
+      .filter((product: { id?: string; enabled?: boolean }) => product.enabled)
+      .map((product: { id: ProductId }) => product.id)
+      .filter((id: ProductId) => defaultProducts.some((product) => product.id === id));
+    if (migrated.length > 0) {
+      await saveSelection(migrated);
+      return migrated;
     }
-  });
-}
-
-// Render manage products list
-function renderManageProductsList() {
-  if (products.length === 0) {
-    manageProductsList.innerHTML = `<p style="text-align: center; color: #8492a6; padding: 20px;">${t('noProductsText')}</p>`;
-    return;
   }
 
-  manageProductsList.innerHTML = products
-    .map(
-      (product) => `
-    <div class="manage-product-row" data-id="${product.id}">
-      <div class="manage-product-info">
-        <div class="manage-product-name">${escapeHtml(product.name)}</div>
-        <div class="manage-product-url">${escapeHtml(product.url)}</div>
-      </div>
-      <div class="manage-product-actions">
-        <button class="btn-icon-text edit" data-id="${product.id}" title="${t('editTitleAttr')}">
-          <span>✏️</span>
-        </button>
-        <button class="btn-icon-text delete" data-id="${product.id}" title="${t('deleteTitleAttr')}">
-          <span>🗑️</span>
-        </button>
-      </div>
-    </div>
-  `
-    )
-    .join('');
-
-  // Bind edit and delete buttons
-  document.querySelectorAll('.manage-product-actions .edit').forEach((btn) => {
-    btn.addEventListener('click', () =>
-      openEditModal((btn as HTMLElement).dataset.id as string)
-    );
-  });
-
-  document.querySelectorAll('.manage-product-actions .delete').forEach((btn) => {
-    btn.addEventListener('click', () =>
-      deleteProduct((btn as HTMLElement).dataset.id as string)
-    );
-  });
+  await saveSelection(DEFAULT_SELECTION);
+  return DEFAULT_SELECTION;
 }
 
-// Update distribute button state
-function updateDistributeButton() {
-  const hasPrompt = promptInput.value.trim().length > 0;
-  const hasEnabledProducts = products.some((p) => p.enabled);
-  distributeBtn.disabled = !hasPrompt || !hasEnabledProducts;
+async function saveSelection(ids: ProductId[] = [...selectedProductIds]): Promise<void> {
+  await chrome.storage.local.set({ selectedProductIds: ids });
 }
 
-// Bind events
-function bindEvents() {
-  // Clear button
-  clearBtn.addEventListener('click', () => {
-    promptInput.value = '';
-    updateDistributeButton();
+function bindEvents(): void {
+  elements.promptInput.addEventListener('input', () => {
+    clearMessage();
+    renderAction();
   });
 
-  // Prompt input change
-  promptInput.addEventListener('input', updateDistributeButton);
-
-  // Distribute button
-  distributeBtn.addEventListener('click', handleDistribute);
-
-  // Manage button
-  manageBtn.addEventListener('click', () => {
-    renderManageProductsList();
-    manageModal.style.display = 'flex';
+  elements.clearButton.addEventListener('click', () => {
+    elements.promptInput.value = '';
+    elements.promptInput.focus();
+    clearMessage();
+    renderAction();
   });
 
-  // Close manage modal
-  closeModal.addEventListener('click', () => {
-    manageModal.style.display = 'none';
-    renderProductsList();
+  elements.languageButton.addEventListener('click', async () => {
+    await toggleLanguage();
+    renderAll();
   });
 
-  // Add product button
-  addProductBtn.addEventListener('click', () => openEditModal());
-  addFirstBtn.addEventListener('click', () => openEditModal());
+  elements.askButton.addEventListener('click', () => startDistribution([...selectedProductIds]));
+  elements.cancelButton.addEventListener('click', cancelDistribution);
+  elements.retryButton.addEventListener('click', () => startDistribution(lastFailedProductIds));
 
-  // Close edit modal
-  closeEditModal.addEventListener('click', closeEditModalHandler);
-  cancelEditBtn.addEventListener('click', closeEditModalHandler);
-
-  // Product form submit
-  productForm.addEventListener('submit', handleProductFormSubmit);
-
-  // Click outside modal to close
-  manageModal.addEventListener('click', (e) => {
-    if (e.target === manageModal) {
-      manageModal.style.display = 'none';
-      renderProductsList();
+  chrome.runtime.onMessage.addListener(
+    (message: { action?: string; completed?: number; total?: number }) => {
+      if (message.action === 'distributionProgress') {
+        renderProgress(message.completed ?? 0, message.total ?? 0);
+      } else if (message.action === 'distributionCancelled') {
+        finishSendingState();
+        hideProgress();
+      }
     }
-  });
-
-  editModal.addEventListener('click', (e) => {
-    if (e.target === editModal) {
-      closeEditModalHandler();
-    }
-  });
-
-  // Language switch button
-  if (langBtn) {
-    langBtn.addEventListener('click', async () => {
-      const newLang = currentLang() === 'zh' ? 'en' : 'zh';
-      await setLanguage(newLang);
-    });
-  }
-
-  // Cancel button
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', cancelDistribution);
-  }
-
-  // Listen for language change event
-  document.addEventListener('languageChanged', () => {
-    renderManageProductsList();
-    renderProductsList();
-    if (editingProductId) {
-      openEditModal(editingProductId);
-    }
-  });
-}
-
-// Open edit modal
-function openEditModal(productId?: string) {
-  editingProductId = productId || null;
-
-  if (productId) {
-    // Edit mode
-    const product = products.find((p) => p.id === productId);
-    if (!product) return;
-
-    editModalTitle.textContent = t('editTitle');
-    (document.getElementById('productName') as HTMLInputElement).value = product.name;
-    (document.getElementById('productUrl') as HTMLInputElement).value = product.url;
-    (document.getElementById('productSelector') as HTMLInputElement).value =
-      product.selector || '';
-    (document.getElementById('productSubmitSelector') as HTMLInputElement).value =
-      product.submitSelector || '';
-  } else {
-    // Add mode
-    editModalTitle.textContent = t('addTitle');
-    productForm.reset();
-  }
-
-  manageModal.style.display = 'none';
-  editModal.style.display = 'flex';
-}
-
-// Close edit modal
-function closeEditModalHandler() {
-  editModal.style.display = 'none';
-  editingProductId = null;
-  productForm.reset();
-  if (products.length > 0) {
-    manageModal.style.display = 'flex';
-  }
-}
-
-// Handle product form submit
-async function handleProductFormSubmit(e: Event) {
-  e.preventDefault();
-
-  const name = (document.getElementById('productName') as HTMLInputElement).value.trim();
-  const url = (document.getElementById('productUrl') as HTMLInputElement).value.trim();
-  const selector = (
-    document.getElementById('productSelector') as HTMLInputElement
-  ).value.trim();
-  const submitSelector = (
-    document.getElementById('productSubmitSelector') as HTMLInputElement
-  ).value.trim();
-
-  if (!name || !url) {
-    showStatus(t('statusFillRequired'), 'error');
-    return;
-  }
-
-  if (editingProductId) {
-    // Edit existing product
-    const product = products.find((p) => p.id === editingProductId);
-    if (product) {
-      product.name = name;
-      product.url = url;
-      product.selector = selector;
-      product.submitSelector = submitSelector;
-    }
-  } else {
-    // Add new product
-    products.push({
-      id: generateId(),
-      name,
-      url,
-      selector,
-      submitSelector,
-      enabled: true,
-    });
-  }
-
-  await saveProducts();
-  closeEditModalHandler();
-  renderManageProductsList();
-  renderProductsList();
-  updateDistributeButton();
-  showStatus(
-    editingProductId ? t('statusProductUpdated') : t('statusProductAdded'),
-    'success'
   );
 }
 
-// Delete product
-async function deleteProduct(productId: string) {
-  if (!confirm(t('deleteConfirm'))) return;
-
-  products = products.filter((p) => p.id !== productId);
-  await saveProducts();
-  renderManageProductsList();
-  renderProductsList();
-  updateDistributeButton();
-  showStatus(t('statusProductDeleted'), 'success');
+function renderAll(): void {
+  elements.tagline.textContent = t('tagline');
+  elements.languageButton.textContent = currentLanguage() === 'zh' ? 'EN' : '中';
+  elements.promptLabel.textContent = t('promptLabel');
+  elements.promptInput.placeholder = t('promptPlaceholder');
+  elements.clearButton.textContent = t('clear');
+  elements.modelsLabel.textContent = t('modelsLabel');
+  elements.modelsHint.textContent = t('modelsHint');
+  elements.cancelButton.textContent = t('cancel');
+  elements.retryButton.textContent = t('tryAgain');
+  elements.privacyNote.textContent = t('privacy');
+  renderModels();
+  renderAction();
 }
 
-// Handle distribution
-async function handleDistribute() {
-  const prompt = promptInput.value.trim();
-  if (!prompt) {
-    showStatus(t('statusEnterPrompt'), 'error');
-    return;
-  }
+function renderModels(): void {
+  elements.modelsGrid.innerHTML = defaultProducts
+    .map((product) => {
+      const selected = selectedProductIds.has(product.id);
+      return `
+        <button
+          class="model-option${selected ? ' selected' : ''}"
+          type="button"
+          data-product-id="${product.id}"
+          aria-pressed="${selected}"
+        >
+          <span class="model-avatar" aria-hidden="true">${product.name.slice(0, 1)}</span>
+          <span class="model-name">${product.name}</span>
+          <span class="model-check" aria-hidden="true">${selected ? '✓' : ''}</span>
+        </button>
+      `;
+    })
+    .join('');
 
-  const enabledProducts = products.filter((p) => p.enabled);
-  if (enabledProducts.length === 0) {
-    showStatus(t('statusSelectProduct'), 'error');
-    return;
-  }
+  elements.modelsGrid.querySelectorAll<HTMLButtonElement>('.model-option').forEach((button) => {
+    button.addEventListener('click', async () => {
+      const productId = button.dataset.productId as ProductId;
+      if (selectedProductIds.has(productId)) selectedProductIds.delete(productId);
+      else selectedProductIds.add(productId);
 
-  // Reset cancel flag
-  distributionCancelled = false;
-
-  // Disable button and show progress bar
-  distributeBtn.disabled = true;
-
-  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-  const progressFill = document.getElementById('progressFill') as HTMLDivElement;
-  const progressText = document.getElementById('progressText') as HTMLDivElement;
-
-  progressSection.style.display = 'block';
-  progressFill.style.width = '0%';
-  progressText.textContent = t('progressText', {
-    completed: '0',
-    total: enabledProducts.length.toString(),
+      await saveSelection();
+      clearMessage();
+      renderModels();
+      renderAction();
+    });
   });
-  if (cancelBtn) {
-    cancelBtn.style.display = 'block';
-    cancelBtn.textContent = t('cancelProgressBtn');
-  }
+}
+
+function renderAction(): void {
+  const count = selectedProductIds.size;
+  elements.askButton.textContent = count === 1 ? t('askOne') : t('ask', { count: String(count) });
+  elements.askButton.disabled =
+    isSending || count === 0 || elements.promptInput.value.trim().length === 0;
+}
+
+async function startDistribution(productIds: ProductId[]): Promise<void> {
+  const prompt = elements.promptInput.value.trim();
+  if (!prompt) return showMessage(t('emptyPrompt'));
+  if (productIds.length === 0) return showMessage(t('selectProduct'));
+
+  isSending = true;
+  lastFailedProductIds = [];
+  elements.resultsPanel.hidden = true;
+  elements.retryButton.hidden = true;
+  clearMessage();
+  renderAction();
+  renderProgress(0, productIds.length);
 
   try {
-    // Listen for progress updates
-    const progressListener = (message: any) => {
-      if (message.action === 'distributionProgress') {
-        const percent = (message.completed / message.total) * 100;
-        progressFill.style.width = `${percent}%`;
-        progressText.textContent = t('progressText', {
-          completed: message.completed.toString(),
-          total: message.total.toString(),
-        });
-      } else if (message.action === 'distributionCancelled') {
-        progressSection.style.display = 'none';
-        if (cancelBtn) {
-          cancelBtn.style.display = 'none';
-        }
-        showStatus(t('statusDistributeCancelled'), 'info');
-        distributeBtn.disabled = false;
-        updateDistributeButton();
-      }
-    };
+    const response = (await chrome.runtime.sendMessage({
+      action: 'distribute',
+      prompt,
+      productIds,
+    })) as DistributeResponse;
 
-    chrome.runtime.onMessage.addListener(progressListener);
-
-    let response: any;
-    try {
-      // Send message to background script
-      response = await chrome.runtime.sendMessage({
-        action: 'distribute',
-        prompt,
-        products: enabledProducts,
-      });
-    } finally {
-      chrome.runtime.onMessage.removeListener(progressListener);
-    }
-
-    // Check if cancelled
-    if (distributionCancelled) {
+    if (response.cancelled) {
+      hideProgress();
       return;
     }
 
-    if (response && response.success) {
-      const successCount = response.results.filter((r: any) => r.success).length;
-      const failCount = response.results.length - successCount;
-
-      // Complete progress
-      progressFill.style.width = '100%';
-      progressText.textContent = t('progressText', {
-        completed: enabledProducts.length.toString(),
-        total: enabledProducts.length.toString(),
-      });
-
-      // Hide cancel button
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-
-      // Hide progress bar after 2 seconds
-      setTimeout(() => {
-        progressSection.style.display = 'none';
-      }, 2000);
-
-      if (failCount === 0) {
-        showStatus(t('statusDistributeSuccess', { count: successCount.toString() }), 'success');
-      } else {
-        showStatus(
-          t('statusDistributePartial', {
-            success: successCount.toString(),
-            fail: failCount.toString(),
-          }),
-          'error'
-        );
-      }
-    } else if (response && response.cancelled) {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(t('statusDistributeCancelled'), 'info');
-    } else {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(
-        t('statusDistributeFailed', { error: response?.error || 'Unknown error' }),
-        'error'
-      );
+    if (!response.success || !response.results) {
+      showMessage(response.error ?? t('unknownError'));
+      hideProgress();
+      return;
     }
-  } catch (error) {
-    if (!distributionCancelled) {
-      progressSection.style.display = 'none';
-      if (cancelBtn) {
-        cancelBtn.style.display = 'none';
-      }
-      showStatus(
-        t('statusDistributeFailed', {
-          error: error instanceof Error ? error.message : 'Unknown error',
-        }),
-        'error'
-      );
-    }
+
+    renderResults(response.results);
+    hideProgress();
+  } catch (error: unknown) {
+    showMessage(error instanceof Error ? error.message : t('unknownError'));
+    hideProgress();
   } finally {
-    if (!distributionCancelled) {
-      distributeBtn.disabled = false;
-      updateDistributeButton();
-    }
+    finishSendingState();
   }
 }
 
-// Cancel distribution
-async function cancelDistribution() {
-  distributionCancelled = true;
-  await chrome.runtime.sendMessage({ action: 'cancelDistribution' });
-  const progressSection = document.getElementById('progressSection') as HTMLDivElement;
-  const cancelBtn = document.getElementById('cancelBtn') as HTMLButtonElement;
-  progressSection.style.display = 'none';
-  if (cancelBtn) {
-    cancelBtn.style.display = 'none';
+async function cancelDistribution(): Promise<void> {
+  await chrome.runtime.sendMessage({ action: 'cancelDistribution' }).catch(() => undefined);
+  finishSendingState();
+  hideProgress();
+}
+
+function renderProgress(completed: number, total: number): void {
+  elements.progressPanel.hidden = false;
+  elements.progressText.textContent = t('progress', {
+    completed: String(completed),
+    total: String(total),
+  });
+  const percentage = total === 0 ? 0 : Math.round((completed / total) * 100);
+  elements.progressBar.style.width = `${percentage}%`;
+}
+
+function hideProgress(): void {
+  elements.progressPanel.hidden = true;
+  elements.progressBar.style.width = '0%';
+}
+
+function renderResults(results: DistributionResult[]): void {
+  const failures = results.filter((result) => !result.success);
+  const successes = results.filter((result) => result.success);
+  lastFailedProductIds = failures.map((result) => result.productId);
+
+  elements.resultsTitle.textContent =
+    failures.length === 0
+      ? t('completed', { count: String(successes.length) })
+      : t('resultPartial');
+  elements.retryButton.hidden = failures.length === 0;
+
+  elements.resultsList.innerHTML = results
+    .map((result) => {
+      const detail = result.success
+        ? result.reusedTab
+          ? t('existingTab')
+          : t('newTab')
+        : errorLabel(result);
+
+      return `
+        <div class="result-row ${result.success ? 'success' : 'failure'}">
+          <span class="result-indicator" aria-hidden="true">${result.success ? '✓' : '!'}</span>
+          <span class="result-name">${escapeHtml(result.productName)}</span>
+          <span class="result-detail">${escapeHtml(detail)}</span>
+        </div>
+      `;
+    })
+    .join('');
+
+  elements.resultsPanel.hidden = false;
+}
+
+function errorLabel(result: DistributionResult): string {
+  switch (result.errorCode) {
+    case 'AUTH_REQUIRED':
+      return t('authRequired');
+    case 'INPUT_NOT_FOUND':
+      return t('inputNotFound');
+    case 'SUBMIT_NOT_FOUND':
+      return t('submitNotFound');
+    case 'PAGE_LOAD_TIMEOUT':
+      return t('pageLoadTimeout');
+    case 'CONTENT_SCRIPT_UNAVAILABLE':
+      return t('contentUnavailable');
+    default:
+      return t('unknownError');
   }
-  distributeBtn.disabled = false;
-  updateDistributeButton();
-  showStatus(t('statusDistributeCancelled'), 'info');
 }
 
-// Show status message
-function showStatus(message: string, type: 'info' | 'success' | 'error' = 'info') {
-  statusMsg.textContent = message;
-  statusMsg.className = `status-msg ${type}`;
-  statusMsg.style.display = 'block';
-
-  setTimeout(() => {
-    statusMsg.style.display = 'none';
-  }, 3000);
+async function restoreProgress(): Promise<void> {
+  const stored = await chrome.storage.local.get([
+    'distributionInProgress',
+    'distributionProgress',
+  ]);
+  if (stored.distributionInProgress && stored.distributionProgress) {
+    isSending = true;
+    renderProgress(stored.distributionProgress.completed, stored.distributionProgress.total);
+    renderAction();
+  }
 }
 
-// HTML escape
-function escapeHtml(text: string): string {
-  const div = document.createElement('div');
-  div.textContent = text;
-  return div.innerHTML;
+function finishSendingState(): void {
+  isSending = false;
+  renderAction();
 }
 
-// Start
-init();
+function showMessage(message: string): void {
+  elements.inlineMessage.textContent = message;
+  elements.inlineMessage.hidden = false;
+}
+
+function clearMessage(): void {
+  elements.inlineMessage.hidden = true;
+  elements.inlineMessage.textContent = '';
+}
+
+function escapeHtml(value: string): string {
+  const element = document.createElement('span');
+  element.textContent = value;
+  return element.innerHTML;
+}
+
+void init();
