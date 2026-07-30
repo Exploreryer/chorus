@@ -1,42 +1,55 @@
-// Type definitions for Chorus extension
+export type ProductId = 'chatgpt' | 'claude' | 'gemini' | 'perplexity' | 'grok' | 'manus';
 
 export interface Product {
-  id: string;
+  id: ProductId;
   name: string;
   url: string;
-  selector?: string;
-  submitSelector?: string;
-  enabled: boolean;
+  matches: string[];
+  defaultEnabled: boolean;
+  loginHints: string[];
 }
+
+export type DistributionErrorCode =
+  | 'AUTH_REQUIRED'
+  | 'INPUT_NOT_FOUND'
+  | 'SUBMIT_NOT_FOUND'
+  | 'PAGE_LOAD_TIMEOUT'
+  | 'CONTENT_SCRIPT_UNAVAILABLE'
+  | 'TAB_CLOSED'
+  | 'UNKNOWN';
 
 export interface DistributionProgress {
   completed: number;
   total: number;
+  productId?: ProductId;
 }
 
 export interface DistributionResult {
+  productId: ProductId;
   productName: string;
   success: boolean;
+  reusedTab: boolean;
+  tabId?: number;
+  errorCode?: DistributionErrorCode;
   error?: string;
 }
 
 export interface FillPromptRequest {
   action: 'fillPrompt';
   prompt: string;
-  selector?: string;
-  submitSelector?: string;
+  productId: ProductId;
 }
 
 export interface FillPromptResponse {
   success: boolean;
-  message?: string;
+  errorCode?: DistributionErrorCode;
   error?: string;
 }
 
 export interface DistributeRequest {
   action: 'distribute';
   prompt: string;
-  products: Product[];
+  productIds: ProductId[];
 }
 
 export interface CancelDistributionRequest {
@@ -51,5 +64,5 @@ export interface DistributeResponse {
 }
 
 export interface DistributionState {
-  tabIds: number[];
+  createdTabIds: number[];
 }
