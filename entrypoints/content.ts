@@ -98,7 +98,7 @@ export default defineContentScript({
       (
         request: FillPromptRequest,
         _sender: unknown,
-        sendResponse: (response: FillPromptResponse) => void
+        sendResponse: (response?: FillPromptResponse) => void
       ) => {
         if (request.action !== 'fillPrompt') return;
 
