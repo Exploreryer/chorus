@@ -1,293 +1,504 @@
+import { defineBackground } from 'wxt/utils/define-background';
 import type {
-  Product,
-  DistributionResult,
-  DistributionState,
-  DistributeRequest,
+  BackgroundRequest,
   CancelDistributionRequest,
+  CheckPlatformReadinessRequest,
+  DistributeRequest,
   DistributeResponse,
+  DistributionErrorCode,
+  DistributionResult,
+  DistributionTask,
+  FillPromptResponse,
+  InspectPageResponse,
+  PlatformReadinessMap,
+  Product,
+  ProductId,
 } from '../types';
+import {
+  defaultProducts,
+  getProduct,
+  isLoginUrl,
+  isReusableProductUrl,
+} from '../utils/platforms';
+
+const TASK_KEY = 'activeDistributionTask';
+const MANAGED_TABS_KEY = 'managedProductTabs';
+let taskWriteQueue: Promise<void> = Promise.resolve();
+let managedTabsWriteQueue: Promise<void> = Promise.resolve();
 
 export default defineBackground(() => {
-  // Global variables for distribution state
-  let currentDistribution: DistributionState | null = null;
-  let distributionCancelled = false;
+  let activeTask: DistributionTask | null = null;
+  let startLock = false;
 
-  // Listen for messages from popup
-  chrome.runtime.onMessage.addListener((request, sender, sendResponse) => {
-    if (request.action === 'distribute') {
-      const { prompt, products } = request as DistributeRequest;
-      distributionCancelled = false;
-      handleDistribute(prompt, products)
-        .then((results) => {
-          if (distributionCancelled) {
-            sendResponse({ cancelled: true });
-          } else {
-            sendResponse({ success: true, results });
-          }
-        })
-        .catch((error: Error) => {
-          if (distributionCancelled) {
-            sendResponse({ cancelled: true });
-          } else {
-            sendResponse({ success: false, error: error.message });
-          }
-        });
-      return true; // Keep message channel open for async response
-    } else if (request.action === 'cancelDistribution') {
-      distributionCancelled = true;
-      if (currentDistribution && currentDistribution.tabIds) {
-        // Close created tabs
-        currentDistribution.tabIds.forEach((tabId) => {
-          chrome.tabs.remove(tabId).catch(() => {});
-        });
-      }
-      // Clear progress state
-      chrome.storage.local.set({
-        distributionInProgress: false,
-        distributionProgress: null,
-      });
-      // Notify popup of cancellation
-      chrome.runtime.sendMessage({
-        action: 'distributionCancelled',
-      }).catch(() => {});
-      sendResponse({ success: true });
-      return true;
-    }
-  });
+  void recoverInterruptedTask();
 
-  // Handle distribution logic
-  async function handleDistribute(
-    prompt: string,
-    products: Product[]
-  ): Promise<DistributionResult[]> {
-    const results: DistributionResult[] = [];
-    const delay = 500; // Interval between tab creation (ms)
-    let completed = 0;
-    const tabIds: number[] = [];
-
-    // Save current distribution state
-    currentDistribution = { tabIds };
-
-    // Initialize progress state
-    await chrome.storage.local.set({
-      distributionInProgress: true,
-      distributionProgress: {
-        completed: 0,
-        total: products.length,
-      },
-    });
-
-    // Create tab group (delayed until first tab is created)
-    let groupId: number | null = null;
-
-    for (const product of products) {
-      // Check if cancelled
-      if (distributionCancelled) {
-        break;
-      }
-
-      try {
-        // Create new tab
-        const tab = await chrome.tabs.create({
-          url: product.url,
-          active: false, // Don't switch to new tab automatically
-        });
-
-        if (!tab.id) continue;
-
-        tabIds.push(tab.id);
-        currentDistribution.tabIds = tabIds;
-
-        // Check if cancelled
-        if (distributionCancelled) {
-          break;
+  chrome.runtime.onMessage.addListener(
+    (
+      request: BackgroundRequest,
+      _sender: unknown,
+      sendResponse: (response: unknown) => void
+    ) => {
+      if (request.action === 'distribute') {
+        if (startLock) {
+          sendResponse(busyResponse());
+          return;
         }
 
-        // Add tab to group (first tab creates group, subsequent add to group)
-        try {
-          if (groupId === null) {
-            groupId = await chrome.tabs.group({ tabIds: [tab.id] });
-            await chrome.tabGroups.update(groupId, {
-              title: 'Chorus',
-              color: 'grey',
-              collapsed: false,
-            });
-          } else {
-            await chrome.tabs.group({ tabIds: [tab.id], groupId });
-          }
-        } catch (error) {
-          console.warn('Failed to add tab to group:', error);
-        }
-
-        // Wait for page to load
-        await waitForTabLoad(tab.id);
-
-        // Check if cancelled
-        if (distributionCancelled) {
-          break;
-        }
-
-        // Activate tab to ensure content filling and click operations work properly
-        await chrome.tabs.update(tab.id, { active: true });
-        await sleep(300);
-
-        // Send fill instruction to content script
-        const fillResult = await fillPrompt(
-          tab.id,
-          prompt,
-          product.selector,
-          product.submitSelector
-        );
-
-        results.push({
-          productName: product.name,
-          success: fillResult.success,
-          error: fillResult.error,
-        });
-
-        // Update progress
-        completed++;
-        await updateProgress(completed, products.length);
-        notifyProgress(completed, products.length);
-
-        // Delay to avoid browser overload
-        if (products.indexOf(product) < products.length - 1 && !distributionCancelled) {
-          await sleep(delay);
-        }
-      } catch (error) {
-        if (!distributionCancelled) {
-          results.push({
-            productName: product.name,
-            success: false,
-            error: error instanceof Error ? error.message : 'Unknown error',
+        startLock = true;
+        startDistribution(request as DistributeRequest)
+          .then(sendResponse)
+          .catch((error: unknown) => sendResponse(errorResponse(error)))
+          .finally(() => {
+            startLock = false;
           });
+        return true;
+      }
 
-          // Update progress (even on failure)
-          completed++;
-          await updateProgress(completed, products.length);
-          notifyProgress(completed, products.length);
-        }
+      if (request.action === 'cancelDistribution') {
+        cancelDistribution(request as CancelDistributionRequest)
+          .then(() => sendResponse({ success: true }))
+          .catch((error: unknown) => sendResponse(errorResponse(error)));
+        return true;
+      }
+
+      if (request.action === 'getDistributionTask') {
+        getStoredTask()
+          .then((task) => sendResponse({ success: true, task }))
+          .catch((error: unknown) => sendResponse(errorResponse(error)));
+        return true;
+      }
+
+      if (request.action === 'checkPlatformReadiness') {
+        checkPlatformReadiness(request as CheckPlatformReadinessRequest)
+          .then((readiness) => sendResponse({ success: true, readiness }))
+          .catch((error: unknown) => sendResponse(errorResponse(error)));
+        return true;
       }
     }
+  );
 
-    // Clear progress state
-    await chrome.storage.local.set({
-      distributionInProgress: false,
-      distributionProgress: null,
-    });
+  async function startDistribution(request: DistributeRequest): Promise<DistributeResponse> {
+    const existing = activeTask ?? (await getStoredTask());
+    if (existing?.status === 'running') return busyResponse(existing);
 
-    // Clear current distribution state
-    currentDistribution = null;
-
-    return results;
-  }
-
-  // Update progress state in storage
-  async function updateProgress(completed: number, total: number): Promise<void> {
-    await chrome.storage.local.set({
-      distributionProgress: {
-        completed,
-        total,
-      },
-    });
-  }
-
-  // Notify progress update
-  function notifyProgress(completed: number, total: number): void {
-    chrome.runtime
-      .sendMessage({
-        action: 'distributionProgress',
-        completed,
-        total,
-      })
-      .catch(() => {
-        // Ignore error (popup may be closed)
-      });
-  }
-
-  // Wait for tab to complete loading
-  function waitForTabLoad(tabId: number, timeout = 30000): Promise<void> {
-    return new Promise((resolve, reject) => {
-      const startTime = Date.now();
-
-      const checkStatus = () => {
-        chrome.tabs.get(tabId, (tab) => {
-          if (chrome.runtime.lastError) {
-            reject(new Error('Tab closed'));
-            return;
-          }
-
-          if (tab.status === 'complete') {
-            // Wait an extra 1 second to ensure page is fully rendered
-            setTimeout(() => resolve(), 1000);
-          } else if (Date.now() - startTime > timeout) {
-            reject(new Error('Page load timeout'));
-          } else {
-            setTimeout(checkStatus, 500);
-          }
-        });
+    const productIds = [...new Set(request.productIds)].filter((id) => Boolean(getProduct(id)));
+    if (!request.prompt.trim() || productIds.length === 0) {
+      return {
+        success: false,
+        errorCode: 'UNKNOWN',
+        error: 'A prompt and at least one supported product are required',
       };
+    }
 
-      checkStatus();
-    });
+    const now = new Date().toISOString();
+    const task: DistributionTask = {
+      id: crypto.randomUUID(),
+      status: 'running',
+      prompt: request.prompt.trim(),
+      productIds,
+      completed: 0,
+      total: productIds.length,
+      results: [],
+      createdTabIds: [],
+      startedAt: now,
+      updatedAt: now,
+    };
+
+    activeTask = task;
+    await saveTask(task);
+    void runDistribution(task).catch((error: unknown) => failTask(task.id, error));
+
+    return { success: true, taskId: task.id, task: snapshotTask(task) };
   }
 
-  // Fill prompt into page
-  async function fillPrompt(
-    tabId: number,
-    prompt: string,
-    customSelector?: string,
-    customSubmitSelector?: string
-  ): Promise<{ success: boolean; error?: string }> {
-    // Wait for content script to be ready (retry mechanism)
-    const maxRetries = 5;
-    for (let i = 0; i < maxRetries; i++) {
-      try {
-        const response = await sendMessageToTab(tabId, {
-          action: 'fillPrompt',
-          prompt,
-          selector: customSelector,
-          submitSelector: customSubmitSelector,
-        });
+  async function runDistribution(task: DistributionTask): Promise<void> {
+    const indexedResults = await Promise.all(
+      task.productIds.map(async (productId, index) => {
+        await sleep(index * 220);
+        if (!isTaskRunning(task.id)) return null;
 
-        if (response) {
-          return response;
+        const product = getProduct(productId);
+        if (!product) return null;
+        let result: DistributionResult;
+        try {
+          result = await sendToProduct(task, product, task.prompt);
+        } catch (error: unknown) {
+          result = toResult(
+            product,
+            undefined,
+            false,
+            failure('UNKNOWN', error instanceof Error ? error.message : 'Unknown error')
+          );
         }
-      } catch (error) {
-        console.log(`Chorus: Content script not ready, retry ${i + 1}/${maxRetries}`);
-        if (i < maxRetries - 1) {
-          await sleep(500);
-        }
+        if (!isTaskRunning(task.id)) return null;
+
+        task.completed += 1;
+        task.results = [...task.results, result];
+        await saveAndNotify(task);
+        return { index, result };
+      })
+    );
+
+    if (!isTaskRunning(task.id)) return;
+    await groupCreatedTabs(task);
+
+    task.results = indexedResults
+      .filter((item): item is NonNullable<typeof item> => Boolean(item))
+      .sort((a, b) => a.index - b.index)
+      .map((item) => item.result);
+    task.completed = task.results.length;
+    task.status = 'completed';
+    await saveAndNotify(task);
+    activeTask = null;
+  }
+
+  async function sendToProduct(
+    task: DistributionTask,
+    product: Product,
+    prompt: string
+  ): Promise<DistributionResult> {
+    const existingTab = await findReusableTab(product);
+    if (existingTab?.id) {
+      const inspection = await inspectTab(existingTab.id, product);
+      if (inspection.authRequired) {
+        return toResult(product, existingTab.id, true, failure('AUTH_REQUIRED', 'Sign in required'));
+      }
+      if (inspection.ready && inspection.inputEmpty && inspection.conversationEmpty) {
+        return toResult(product, existingTab.id, true, await tryFill(existingTab.id, product, prompt));
       }
     }
 
-    return { success: false, error: 'Content script not responding' };
+    if (!isTaskRunning(task.id)) {
+      return toResult(product, undefined, false, failure('TASK_INTERRUPTED', 'Task stopped'));
+    }
+
+    const newTab = await chrome.tabs.create({ url: product.url, active: false });
+    if (!newTab.id) {
+      return toResult(product, undefined, false, failure('UNKNOWN', 'Tab was not created'));
+    }
+
+    task.createdTabIds.push(newTab.id);
+    await rememberManagedTab(product.id, newTab.id);
+    await saveAndNotify(task);
+
+    try {
+      await waitForTabLoad(task.id, newTab.id);
+      if (!(await tabMatchesProduct(newTab.id, product))) {
+        return toResult(product, newTab.id, false, failure('AUTH_REQUIRED', 'Sign in required'));
+      }
+      const refreshedTab = await chrome.tabs.get(newTab.id);
+      if (isLoginUrl(refreshedTab.url, product)) {
+        return toResult(product, newTab.id, false, failure('AUTH_REQUIRED', 'Sign in required'));
+      }
+
+      const inspection = await inspectTab(newTab.id, product);
+      if (inspection.authRequired) {
+        return toResult(product, newTab.id, false, failure('AUTH_REQUIRED', 'Sign in required'));
+      }
+      if (!inspection.conversationEmpty) {
+        return toResult(
+          product,
+          newTab.id,
+          false,
+          failure('CONVERSATION_NOT_EMPTY', 'A new empty conversation was not available')
+        );
+      }
+      return toResult(product, newTab.id, false, await tryFill(newTab.id, product, prompt));
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      const errorCode: DistributionErrorCode =
+        message === 'TAB_CLOSED'
+          ? 'TAB_CLOSED'
+          : message === 'TASK_INTERRUPTED'
+            ? 'TASK_INTERRUPTED'
+            : 'PAGE_LOAD_TIMEOUT';
+      return toResult(product, newTab.id, false, failure(errorCode, message));
+    }
   }
 
-  // Send message to tab
-  function sendMessageToTab(tabId: number, message: any): Promise<any> {
-    return new Promise((resolve, reject) => {
-      chrome.tabs.sendMessage(tabId, message, (response) => {
-        if (chrome.runtime.lastError) {
-          reject(new Error(chrome.runtime.lastError.message));
-        } else {
-          resolve(response);
-        }
-      });
+  async function findReusableTab(product: Product): Promise<chrome.tabs.Tab | undefined> {
+    const tabs = await chrome.tabs.query({ url: product.matches });
+    const managedTabs = await getManagedTabs();
+    const managedTabId = managedTabs[product.id];
+
+    return tabs.find((tab) => {
+      if (!tab.id || isLoginUrl(tab.url, product)) return false;
+      return tab.id === managedTabId || isReusableProductUrl(tab.url, product);
     });
   }
 
-  // Delay function
-  function sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  async function tabMatchesProduct(tabId: number, product: Product): Promise<boolean> {
+    const matchingTabs = await chrome.tabs.query({ url: product.matches });
+    return matchingTabs.some((tab) => tab.id === tabId);
   }
 
-  // Listen for install event
-  chrome.runtime.onInstalled.addListener((details) => {
-    if (details.reason === 'install') {
-      console.log('Chorus extension installed');
-    } else if (details.reason === 'update') {
-      console.log('Chorus extension updated');
+  async function inspectTab(tabId: number, product: Product): Promise<InspectPageResponse> {
+    try {
+      return await sendInspectMessage(tabId, product);
+    } catch {
+      try {
+        await injectContentScript(tabId);
+        return await sendInspectMessage(tabId, product);
+      } catch {
+        return {
+          ready: false,
+          inputEmpty: false,
+          conversationEmpty: false,
+          authRequired: false,
+        };
+      }
     }
-  });
+  }
+
+  async function tryFill(
+    tabId: number,
+    product: Product,
+    prompt: string
+  ): Promise<FillPromptResponse> {
+    try {
+      return await sendFillMessage(tabId, product, prompt);
+    } catch {
+      try {
+        await injectContentScript(tabId);
+        return await sendFillMessage(tabId, product, prompt);
+      } catch {
+        return failure('CONTENT_SCRIPT_UNAVAILABLE', 'Page is not ready');
+      }
+    }
+  }
+
+  async function injectContentScript(tabId: number): Promise<void> {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      files: ['content-scripts/content.js'],
+    });
+    await sleep(150);
+  }
+
+  async function sendInspectMessage(tabId: number, product: Product): Promise<InspectPageResponse> {
+    return chrome.tabs.sendMessage(tabId, {
+      action: 'inspectPage',
+      productId: product.id,
+    });
+  }
+
+  async function sendFillMessage(
+    tabId: number,
+    product: Product,
+    prompt: string
+  ): Promise<FillPromptResponse> {
+    const response = await chrome.tabs.sendMessage(tabId, {
+      action: 'fillPrompt',
+      productId: product.id,
+      prompt,
+    });
+    return response ?? failure('CONTENT_SCRIPT_UNAVAILABLE', 'Page is not ready');
+  }
+
+  async function waitForTabLoad(taskId: string, tabId: number, timeout = 30000): Promise<void> {
+    const start = Date.now();
+    while (Date.now() - start < timeout) {
+      if (!isTaskRunning(taskId)) throw new Error('TASK_INTERRUPTED');
+      try {
+        const tab = await chrome.tabs.get(tabId);
+        if (tab.status === 'complete') {
+          await sleep(900);
+          return;
+        }
+      } catch {
+        throw new Error('TAB_CLOSED');
+      }
+      await sleep(350);
+    }
+    throw new Error('PAGE_LOAD_TIMEOUT');
+  }
+
+  async function groupCreatedTabs(task: DistributionTask): Promise<void> {
+    const tabIds = task.createdTabIds.filter(Boolean);
+    if (tabIds.length < 2) return;
+    try {
+      const groupId = await chrome.tabs.group({ tabIds: [tabIds[0], ...tabIds.slice(1)] });
+      await chrome.tabGroups.update(groupId, {
+        title: 'Chorus',
+        color: 'grey',
+        collapsed: false,
+      });
+    } catch {
+      // Grouping is helpful but does not change delivery success.
+    }
+  }
+
+  async function cancelDistribution(request: CancelDistributionRequest): Promise<void> {
+    const task = activeTask ?? (await getStoredTask());
+    if (!task || task.id !== request.taskId || task.status !== 'running') return;
+
+    task.status = 'cancelled';
+    task.updatedAt = new Date().toISOString();
+    await saveAndNotify(task);
+    activeTask = null;
+
+    if (task.createdTabIds.length > 0) {
+      await chrome.tabs.remove(task.createdTabIds).catch(() => undefined);
+    }
+  }
+
+  async function checkPlatformReadiness(
+    _request: CheckPlatformReadinessRequest
+  ): Promise<PlatformReadinessMap> {
+    const readiness: PlatformReadinessMap = {};
+    await Promise.all(
+      defaultProducts.map(async (product) => {
+        const productTabs = await chrome.tabs.query({ url: product.matches });
+        const tab = await findReusableTab(product);
+        if (!tab?.id) {
+          readiness[product.id] = productTabs.some((candidate) => isLoginUrl(candidate.url, product))
+            ? 'signIn'
+            : 'willOpen';
+          return;
+        }
+        const inspection = await inspectTab(tab.id, product);
+        readiness[product.id] = inspection.authRequired
+          ? 'signIn'
+          : inspection.ready && inspection.inputEmpty && inspection.conversationEmpty
+            ? 'ready'
+            : 'unavailable';
+      })
+    );
+    return readiness;
+  }
+
+  async function failTask(taskId: string, error: unknown): Promise<void> {
+    if (!activeTask || activeTask.id !== taskId || activeTask.status !== 'running') return;
+    activeTask.status = 'failed';
+    activeTask.errorCode = 'UNKNOWN';
+    activeTask.error = error instanceof Error ? error.message : 'Unknown error';
+    await saveAndNotify(activeTask);
+    activeTask = null;
+  }
+
+  async function recoverInterruptedTask(): Promise<void> {
+    const task = await getStoredTask();
+    if (!task || task.status !== 'running') return;
+    const recordedProductIds = new Set(task.results.map((result) => result.productId));
+    const interruptedResults = task.productIds.flatMap((productId) => {
+      if (recordedProductIds.has(productId)) return [];
+        const product = getProduct(productId);
+      if (!product) return [];
+      return [
+        toResult(
+          product,
+          undefined,
+          false,
+          failure('TASK_INTERRUPTED', 'Sending was interrupted before a result was recorded')
+        ),
+      ];
+    });
+    task.results = [...task.results, ...interruptedResults];
+    task.completed = task.results.length;
+    task.status = 'failed';
+    task.errorCode = 'TASK_INTERRUPTED';
+    task.error = 'The browser stopped the previous task';
+    await saveAndNotify(task);
+  }
+
+  function isTaskRunning(taskId: string): boolean {
+    return activeTask?.id === taskId && activeTask.status === 'running';
+  }
 });
+
+async function getStoredTask(): Promise<DistributionTask | null> {
+  const stored = await chrome.storage.session.get(TASK_KEY);
+  return (stored[TASK_KEY] as DistributionTask | undefined) ?? null;
+}
+
+async function saveTask(task: DistributionTask): Promise<void> {
+  task.updatedAt = new Date().toISOString();
+  const snapshot = snapshotTask(task);
+  taskWriteQueue = taskWriteQueue
+    .catch(() => undefined)
+    .then(() => chrome.storage.session.set({ [TASK_KEY]: snapshot }));
+  await taskWriteQueue;
+}
+
+async function saveAndNotify(task: DistributionTask): Promise<void> {
+  task.updatedAt = new Date().toISOString();
+  const snapshot = snapshotTask(task);
+  taskWriteQueue = taskWriteQueue
+    .catch(() => undefined)
+    .then(async () => {
+      await chrome.storage.session.set({ [TASK_KEY]: snapshot });
+      await chrome.runtime
+        .sendMessage({ action: 'distributionTaskUpdated', task: snapshot })
+        .catch(() => undefined);
+    });
+  await taskWriteQueue;
+}
+
+function snapshotTask(task: DistributionTask): DistributionTask {
+  return {
+    ...task,
+    productIds: [...task.productIds],
+    results: task.results.map((result) => ({ ...result })),
+    createdTabIds: [...task.createdTabIds],
+  };
+}
+
+async function getManagedTabs(): Promise<Partial<Record<ProductId, number>>> {
+  const stored = await chrome.storage.session.get(MANAGED_TABS_KEY);
+  return (stored[MANAGED_TABS_KEY] as Partial<Record<ProductId, number>> | undefined) ?? {};
+}
+
+async function rememberManagedTab(productId: ProductId, tabId: number): Promise<void> {
+  managedTabsWriteQueue = managedTabsWriteQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const managedTabs = await getManagedTabs();
+      await chrome.storage.session.set({
+        [MANAGED_TABS_KEY]: { ...managedTabs, [productId]: tabId },
+      });
+    });
+  await managedTabsWriteQueue;
+}
+
+function busyResponse(task?: DistributionTask): DistributeResponse {
+  return {
+    success: false,
+    taskId: task?.id,
+    task: task ? snapshotTask(task) : undefined,
+    errorCode: 'TASK_IN_PROGRESS',
+    error: 'Another task is already running',
+  };
+}
+
+function errorResponse(error: unknown): DistributeResponse {
+  return {
+    success: false,
+    errorCode: 'UNKNOWN',
+    error: error instanceof Error ? error.message : 'Unknown error',
+  };
+}
+
+function failure(errorCode: DistributionErrorCode, error: string): FillPromptResponse {
+  return { success: false, errorCode, error };
+}
+
+function toResult(
+  product: Product,
+  tabId: number | undefined,
+  reusedTab: boolean,
+  response: FillPromptResponse
+): DistributionResult {
+  return {
+    productId: product.id,
+    productName: product.name,
+    success: response.success,
+    reusedTab,
+    tabId,
+    errorCode: response.errorCode,
+    error: response.error,
+  };
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}

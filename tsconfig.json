@@ -14,6 +14,6 @@
     "forceConsistentCasingInFileNames": true,
     "types": ["chrome"]
   },
-  "include": ["entrypoints/**/*", "components/**/*", "utils/**/*", "wxt.config.ts"],
+  "include": [".wxt/wxt.d.ts", "entrypoints/**/*", "components/**/*", "utils/**/*", "wxt.config.ts"],
   "exclude": ["node_modules", ".output", ".wxt"]
 }
