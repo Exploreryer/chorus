@@ -24,6 +24,7 @@ import {
 const TASK_KEY = 'activeDistributionTask';
 const MANAGED_TABS_KEY = 'managedProductTabs';
 let taskWriteQueue: Promise<void> = Promise.resolve();
+let managedTabsWriteQueue: Promise<void> = Promise.resolve();
 
 export default defineBackground(() => {
   let activeTask: DistributionTask | null = null;
@@ -193,6 +194,14 @@ export default defineBackground(() => {
       const inspection = await inspectTab(newTab.id, product);
       if (inspection.authRequired) {
         return toResult(product, newTab.id, false, failure('AUTH_REQUIRED', 'Sign in required'));
+      }
+      if (!inspection.conversationEmpty) {
+        return toResult(
+          product,
+          newTab.id,
+          false,
+          failure('CONVERSATION_NOT_EMPTY', 'A new empty conversation was not available')
+        );
       }
       return toResult(product, newTab.id, false, await tryFill(newTab.id, product, prompt));
     } catch (error: unknown) {
@@ -423,10 +432,13 @@ async function getManagedTabs(): Promise<Partial<Record<ProductId, number>>> {
 }
 
 async function rememberManagedTab(productId: ProductId, tabId: number): Promise<void> {
-  const managedTabs = await getManagedTabs();
-  await chrome.storage.session.set({
-    [MANAGED_TABS_KEY]: { ...managedTabs, [productId]: tabId },
+  managedTabsWriteQueue = managedTabsWriteQueue.then(async () => {
+    const managedTabs = await getManagedTabs();
+    await chrome.storage.session.set({
+      [MANAGED_TABS_KEY]: { ...managedTabs, [productId]: tabId },
+    });
   });
+  await managedTabsWriteQueue;
 }
 
 function busyResponse(task?: DistributionTask): DistributeResponse {

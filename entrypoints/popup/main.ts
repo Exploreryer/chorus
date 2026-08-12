@@ -337,6 +337,8 @@ function errorLabel(result: DistributionResult): string {
       return t('inputNotFound');
     case 'INPUT_NOT_EMPTY':
       return t('draftPreserved');
+    case 'CONVERSATION_NOT_EMPTY':
+      return t('conversationPreserved');
     case 'SUBMIT_NOT_FOUND':
       return t('submitNotFound');
     case 'SUBMIT_NOT_CONFIRMED':

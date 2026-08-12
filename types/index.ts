@@ -26,6 +26,7 @@ export type DistributionErrorCode =
   | 'AUTH_REQUIRED'
   | 'INPUT_NOT_FOUND'
   | 'INPUT_NOT_EMPTY'
+  | 'CONVERSATION_NOT_EMPTY'
   | 'SUBMIT_NOT_FOUND'
   | 'SUBMIT_NOT_CONFIRMED'
   | 'PAGE_LOAD_TIMEOUT'

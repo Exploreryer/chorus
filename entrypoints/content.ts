@@ -65,7 +65,7 @@ async function inspectPage(productId: ProductId): Promise<InspectPageResponse> {
   return {
     ready: Boolean(input),
     inputEmpty: Boolean(input && readInput(input).trim().length === 0),
-    conversationEmpty: countElements(adapter.sentIndicators) === 0,
+    conversationEmpty: countVisibleElements(adapter.sentIndicators) === 0,
     authRequired,
   };
 }
@@ -108,9 +108,9 @@ interface ConfirmationState {
 
 function captureConfirmationState(adapter: PlatformAdapter, prompt: string): ConfirmationState {
   return {
-    sentCount: countElements(adapter.sentIndicators),
+    sentCount: countVisibleElements(adapter.sentIndicators),
     matchingPromptCount: countMatchingText(adapter.sentIndicators, prompt),
-    generatingCount: countElements(adapter.generatingIndicators),
+    generatingCount: countVisibleElements(adapter.generatingIndicators),
   };
 }
 
@@ -127,7 +127,7 @@ async function confirmSent(
     const now = captureConfirmationState(adapter, prompt);
     if (now.matchingPromptCount > before.matchingPromptCount) return true;
     if (now.sentCount > before.sentCount) return true;
-    if (now.generatingCount > before.generatingCount || now.generatingCount > 0) return true;
+    if (now.generatingCount > before.generatingCount) return true;
 
     if (readInput(input).trim().length === 0) {
       inputClearedAt ??= Date.now();
@@ -181,8 +181,12 @@ function queryAll(selector: string): Element[] {
   }
 }
 
-function countElements(selectors: string[]): number {
-  return selectors.reduce((count, selector) => count + queryAll(selector).length, 0);
+function countVisibleElements(selectors: string[]): number {
+  return selectors.reduce(
+    (count, selector) =>
+      count + queryAll(selector).filter((element) => isVisible(element as HTMLElement)).length,
+    0
+  );
 }
 
 function countMatchingText(selectors: string[], prompt: string): number {
@@ -190,8 +194,11 @@ function countMatchingText(selectors: string[], prompt: string): number {
   return selectors.reduce(
     (count, selector) =>
       count +
-      queryAll(selector).filter((element) => normalizeText(element.textContent ?? '').includes(expected))
-        .length,
+      queryAll(selector).filter(
+        (element) =>
+          isVisible(element as HTMLElement) &&
+          normalizeText(element.textContent ?? '').includes(expected)
+      ).length,
     0
   );
 }
