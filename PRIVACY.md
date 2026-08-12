@@ -2,7 +2,8 @@
 
 Effective date: August 12, 2026
 
-Document creator: ChatGPT Codex  
+Document creator: ChatGPT Codex
+
 Product publisher: Exploreryer
 
 ## Summary

@@ -1,6 +1,7 @@
 # Chrome Web Store Submission — v1.1.0
 
-Document creator: ChatGPT Codex  
+Document creator: ChatGPT Codex
+
 Last updated: August 12, 2026
 
 ## Current conclusion
@@ -15,8 +16,10 @@ Send one user-entered question to the AI websites the user selects, using the us
 
 ## Draft store listing
 
-Working title: **Chorus — Ask Multiple AIs**  
-Category: **Productivity**  
+Working title: **Chorus — Ask Multiple AIs**
+
+Category: **Productivity**
+
 Default language: **English**
 
 Short description:
