@@ -1,131 +1,90 @@
+import { defineContentScript } from 'wxt/utils/define-content-script';
 import type {
-  FillPromptRequest,
-  FillPromptResponse,
-  ProductId,
+  ContentScriptRequest,
   DistributionErrorCode,
+  FillPromptResponse,
+  InspectPageResponse,
+  PlatformAdapter,
+  ProductId,
 } from '../types';
-
-type Adapter = {
-  inputSelectors: string[];
-  submitSelectors: string[];
-};
-
-const adapters: Record<ProductId, Adapter> = {
-  chatgpt: {
-    inputSelectors: ['#prompt-textarea', 'div[contenteditable="true"][data-placeholder]'],
-    submitSelectors: [
-      'button[data-testid="send-button"]',
-      'button[aria-label="Send prompt"]',
-      'button[aria-label="发送提示"]',
-    ],
-  },
-  claude: {
-    inputSelectors: [
-      'div.ProseMirror[contenteditable="true"]',
-      'div[contenteditable="true"][data-placeholder]',
-    ],
-    submitSelectors: [
-      'button[aria-label="Send message"]',
-      'button[aria-label="发送消息"]',
-    ],
-  },
-  gemini: {
-    inputSelectors: [
-      'div.ql-editor[contenteditable="true"]',
-      'div[contenteditable="true"][role="textbox"]',
-      'rich-textarea div[contenteditable="true"]',
-    ],
-    submitSelectors: [
-      'button[aria-label*="Send message" i]',
-      'button[aria-label*="发送消息" i]',
-      'button.send-button',
-    ],
-  },
-  perplexity: {
-    inputSelectors: [
-      'textarea[placeholder]',
-      'div[contenteditable="true"][role="textbox"]',
-      'div.ProseMirror[contenteditable="true"]',
-    ],
-    submitSelectors: [
-      'button[aria-label*="Submit" i]',
-      'button[aria-label*="Send" i]',
-      'button[data-testid*="submit" i]',
-    ],
-  },
-  grok: {
-    inputSelectors: [
-      'textarea[placeholder]',
-      'div[contenteditable="true"][role="textbox"]',
-      'div[contenteditable="true"]',
-    ],
-    submitSelectors: [
-      'button[data-testid="sendButton"]',
-      'button[data-testid="send-button"]',
-      'button[aria-label*="Send" i]',
-    ],
-  },
-  manus: {
-    inputSelectors: [
-      'textarea[placeholder]',
-      'div[contenteditable="true"][role="textbox"]',
-      'div.ProseMirror[contenteditable="true"]',
-    ],
-    submitSelectors: [
-      'button[type="submit"]',
-      'button[aria-label*="Send" i]',
-      'button[aria-label*="发送" i]',
-    ],
-  },
-};
+import { getPlatform, platformMatches } from '../utils/platforms';
 
 export default defineContentScript({
-  matches: [
-    'https://chatgpt.com/*',
-    'https://chat.openai.com/*',
-    'https://claude.ai/*',
-    'https://gemini.google.com/*',
-    'https://www.perplexity.ai/*',
-    'https://perplexity.ai/*',
-    'https://x.com/i/grok*',
-    'https://manus.im/*',
-    'https://www.manus.im/*',
-  ],
+  matches: platformMatches,
   runAt: 'document_idle',
 
   main() {
     chrome.runtime.onMessage.addListener(
       (
-        request: FillPromptRequest,
+        request: ContentScriptRequest,
         _sender: unknown,
-        sendResponse: (response?: FillPromptResponse) => void
+        sendResponse: (response?: FillPromptResponse | InspectPageResponse) => void
       ) => {
-        if (request.action !== 'fillPrompt') return;
-
-        fillAndSubmit(request.productId, request.prompt)
-          .then(sendResponse)
-          .catch((error: unknown) => {
+        if (request.action === 'inspectPage') {
+          inspectPage(request.productId).then(sendResponse).catch(() => {
             sendResponse({
-              success: false,
-              errorCode: 'UNKNOWN',
-              error: error instanceof Error ? error.message : 'Unknown error',
-            } satisfies FillPromptResponse);
+              ready: false,
+              inputEmpty: false,
+              conversationEmpty: false,
+              authRequired: false,
+            });
           });
+          return true;
+        }
 
-        return true;
+        if (request.action === 'fillPrompt') {
+          fillAndSubmit(request.productId, request.prompt)
+            .then(sendResponse)
+            .catch((error: unknown) => {
+              sendResponse({
+                success: false,
+                errorCode: 'UNKNOWN',
+                error: error instanceof Error ? error.message : 'Unknown error',
+              } satisfies FillPromptResponse);
+            });
+          return true;
+        }
       }
     );
   },
 });
 
-async function fillAndSubmit(productId: ProductId, prompt: string): Promise<FillPromptResponse> {
-  const adapter = adapters[productId];
-  const input = await findVisibleElement(adapter.inputSelectors, 12, 500);
-
-  if (!input) {
-    return failure('INPUT_NOT_FOUND', 'Prompt input was not found');
+async function inspectPage(productId: ProductId): Promise<InspectPageResponse> {
+  const adapter = getPlatform(productId)?.adapter;
+  if (!adapter) {
+    return {
+      ready: false,
+      inputEmpty: false,
+      conversationEmpty: false,
+      authRequired: false,
+    };
   }
 
+  const authRequired = Boolean(findVisibleElementNow(adapter.authSelectors));
+  const input = findVisibleElementNow(adapter.inputSelectors);
+  return {
+    ready: Boolean(input),
+    inputEmpty: Boolean(input && readInput(input).trim().length === 0),
+    conversationEmpty: countElements(adapter.sentIndicators) === 0,
+    authRequired,
+  };
+}
+
+async function fillAndSubmit(productId: ProductId, prompt: string): Promise<FillPromptResponse> {
+  const adapter = getPlatform(productId)?.adapter;
+  if (!adapter) return failure('UNKNOWN', 'Unsupported product');
+
+  if (findVisibleElementNow(adapter.authSelectors)) {
+    return failure('AUTH_REQUIRED', 'Sign in required');
+  }
+
+  const input = await findVisibleElement(adapter.inputSelectors, 12, 500);
+  if (!input) return failure('INPUT_NOT_FOUND', 'Prompt input was not found');
+  if (readInput(input).trim().length > 0) {
+    return failure('INPUT_NOT_EMPTY', 'The existing draft was left unchanged');
+  }
+
+  const before = captureConfirmationState(adapter, prompt);
   await writePrompt(input, prompt);
   await sleep(350);
 
@@ -135,9 +94,50 @@ async function fillAndSubmit(productId: ProductId, prompt: string): Promise<Fill
   }
 
   clickElement(submit);
-  await sleep(250);
+  const confirmed = await confirmSent(adapter, input, prompt, before);
+  return confirmed
+    ? { success: true }
+    : failure('SUBMIT_NOT_CONFIRMED', 'Prompt was filled but sending was not confirmed');
+}
 
-  return { success: true };
+interface ConfirmationState {
+  sentCount: number;
+  matchingPromptCount: number;
+  generatingCount: number;
+}
+
+function captureConfirmationState(adapter: PlatformAdapter, prompt: string): ConfirmationState {
+  return {
+    sentCount: countElements(adapter.sentIndicators),
+    matchingPromptCount: countMatchingText(adapter.sentIndicators, prompt),
+    generatingCount: countElements(adapter.generatingIndicators),
+  };
+}
+
+async function confirmSent(
+  adapter: PlatformAdapter,
+  input: HTMLElement,
+  prompt: string,
+  before: ConfirmationState
+): Promise<boolean> {
+  const start = Date.now();
+  let inputClearedAt: number | null = null;
+
+  while (Date.now() - start < adapter.confirmTimeoutMs) {
+    const now = captureConfirmationState(adapter, prompt);
+    if (now.matchingPromptCount > before.matchingPromptCount) return true;
+    if (now.sentCount > before.sentCount) return true;
+    if (now.generatingCount > before.generatingCount || now.generatingCount > 0) return true;
+
+    if (readInput(input).trim().length === 0) {
+      inputClearedAt ??= Date.now();
+      if (Date.now() - inputClearedAt >= 800) return true;
+    } else {
+      inputClearedAt = null;
+    }
+    await sleep(200);
+  }
+  return false;
 }
 
 function failure(errorCode: DistributionErrorCode, error: string): FillPromptResponse {
@@ -151,26 +151,53 @@ async function findVisibleElement(
   requireEnabled = false
 ): Promise<HTMLElement | null> {
   for (let attempt = 0; attempt < attempts; attempt += 1) {
-    for (const selector of selectors) {
-      let elements: NodeListOf<Element>;
-      try {
-        elements = document.querySelectorAll(selector);
-      } catch {
-        continue;
-      }
-
-      for (const element of elements) {
-        const htmlElement = element as HTMLElement;
-        if (!isVisible(htmlElement)) continue;
-        if (requireEnabled && isDisabled(htmlElement)) continue;
-        return htmlElement;
-      }
-    }
-
+    const element = findVisibleElementNow(selectors, requireEnabled);
+    if (element) return element;
     if (attempt < attempts - 1) await sleep(delay);
   }
-
   return null;
+}
+
+function findVisibleElementNow(
+  selectors: string[],
+  requireEnabled = false
+): HTMLElement | null {
+  for (const selector of selectors) {
+    for (const element of queryAll(selector)) {
+      const htmlElement = element as HTMLElement;
+      if (!isVisible(htmlElement)) continue;
+      if (requireEnabled && isDisabled(htmlElement)) continue;
+      return htmlElement;
+    }
+  }
+  return null;
+}
+
+function queryAll(selector: string): Element[] {
+  try {
+    return [...document.querySelectorAll(selector)];
+  } catch {
+    return [];
+  }
+}
+
+function countElements(selectors: string[]): number {
+  return selectors.reduce((count, selector) => count + queryAll(selector).length, 0);
+}
+
+function countMatchingText(selectors: string[], prompt: string): number {
+  const expected = normalizeText(prompt);
+  return selectors.reduce(
+    (count, selector) =>
+      count +
+      queryAll(selector).filter((element) => normalizeText(element.textContent ?? '').includes(expected))
+        .length,
+    0
+  );
+}
+
+function normalizeText(value: string): string {
+  return value.replace(/\s+/g, ' ').trim();
 }
 
 function isVisible(element: HTMLElement): boolean {
@@ -192,6 +219,13 @@ function isDisabled(element: HTMLElement): boolean {
   );
 }
 
+function readInput(element: HTMLElement): string {
+  if (element instanceof HTMLTextAreaElement || element instanceof HTMLInputElement) {
+    return element.value;
+  }
+  return element.textContent ?? '';
+}
+
 async function writePrompt(element: HTMLElement, prompt: string): Promise<void> {
   element.focus();
 
@@ -201,21 +235,15 @@ async function writePrompt(element: HTMLElement, prompt: string): Promise<void> 
         ? HTMLTextAreaElement.prototype
         : HTMLInputElement.prototype;
     const descriptor = Object.getOwnPropertyDescriptor(prototype, 'value');
-
     if (descriptor?.set) descriptor.set.call(element, prompt);
     else element.value = prompt;
   } else {
-    element.textContent = '';
     const selection = window.getSelection();
     const range = document.createRange();
     range.selectNodeContents(element);
-    range.collapse(true);
     selection?.removeAllRanges();
     selection?.addRange(range);
-
-    if (!document.execCommand('insertText', false, prompt)) {
-      element.textContent = prompt;
-    }
+    if (!document.execCommand('insertText', false, prompt)) element.textContent = prompt;
   }
 
   element.dispatchEvent(
@@ -227,7 +255,6 @@ async function writePrompt(element: HTMLElement, prompt: string): Promise<void> 
     })
   );
   element.dispatchEvent(new Event('change', { bubbles: true }));
-
   await sleep(100);
 }
 

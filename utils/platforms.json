@@ -1,0 +1,104 @@
+[
+  {
+    "id": "chatgpt",
+    "name": "ChatGPT",
+    "url": "https://chatgpt.com/",
+    "matches": ["https://chatgpt.com/*", "https://chat.openai.com/*"],
+    "reusablePaths": ["/"],
+    "defaultEnabled": true,
+    "loginHints": ["/auth/login", "/auth/error"],
+    "adapter": {
+      "inputSelectors": ["#prompt-textarea", "div[contenteditable=\"true\"][data-placeholder]"],
+      "submitSelectors": ["button[data-testid=\"send-button\"]", "button[aria-label=\"Send prompt\"]", "button[aria-label=\"发送提示\"]"],
+      "authSelectors": ["a[href*=\"auth/login\"]", "button[data-testid=\"login-button\"]"],
+      "sentIndicators": ["[data-message-author-role=\"user\"]"],
+      "generatingIndicators": ["button[data-testid=\"stop-button\"]", "button[aria-label*=\"Stop\" i]"],
+      "confirmTimeoutMs": 5000
+    }
+  },
+  {
+    "id": "claude",
+    "name": "Claude",
+    "url": "https://claude.ai/new",
+    "matches": ["https://claude.ai/*"],
+    "reusablePaths": ["/new"],
+    "defaultEnabled": true,
+    "loginHints": ["/login", "/oauth"],
+    "adapter": {
+      "inputSelectors": ["div.ProseMirror[contenteditable=\"true\"]", "div[contenteditable=\"true\"][data-placeholder]"],
+      "submitSelectors": ["button[aria-label=\"Send message\"]", "button[aria-label=\"发送消息\"]"],
+      "authSelectors": ["a[href*=\"login\"]", "button[data-testid*=\"login\" i]"],
+      "sentIndicators": ["[data-testid=\"user-message\"]", ".font-user-message"],
+      "generatingIndicators": ["button[aria-label*=\"Stop\" i]"],
+      "confirmTimeoutMs": 5000
+    }
+  },
+  {
+    "id": "gemini",
+    "name": "Gemini",
+    "url": "https://gemini.google.com/app",
+    "matches": ["https://gemini.google.com/*"],
+    "reusablePaths": ["/app"],
+    "defaultEnabled": true,
+    "loginHints": ["/signin", "accounts.google.com"],
+    "adapter": {
+      "inputSelectors": ["div.ql-editor[contenteditable=\"true\"]", "div[contenteditable=\"true\"][role=\"textbox\"]", "rich-textarea div[contenteditable=\"true\"]"],
+      "submitSelectors": ["button[aria-label*=\"Send message\" i]", "button[aria-label*=\"发送消息\" i]", "button.send-button"],
+      "authSelectors": ["a[href*=\"accounts.google.com\"]", "a[aria-label*=\"Sign in\" i]"],
+      "sentIndicators": ["user-query", ".query-text"],
+      "generatingIndicators": ["button[aria-label*=\"Stop response\" i]", "button[aria-label*=\"停止\" i]"],
+      "confirmTimeoutMs": 6000
+    }
+  },
+  {
+    "id": "perplexity",
+    "name": "Perplexity",
+    "url": "https://www.perplexity.ai/",
+    "matches": ["https://www.perplexity.ai/*", "https://perplexity.ai/*"],
+    "reusablePaths": ["/"],
+    "defaultEnabled": false,
+    "loginHints": ["/login", "/signin"],
+    "adapter": {
+      "inputSelectors": ["textarea[placeholder]", "div[contenteditable=\"true\"][role=\"textbox\"]", "div.ProseMirror[contenteditable=\"true\"]"],
+      "submitSelectors": ["button[aria-label*=\"Submit\" i]", "button[aria-label*=\"Send\" i]", "button[data-testid*=\"submit\" i]"],
+      "authSelectors": ["button[data-testid*=\"login\" i]", "a[href*=\"login\"]"],
+      "sentIndicators": ["[data-testid=\"user-query\"]", "[data-testid*=\"query\" i]"],
+      "generatingIndicators": ["button[aria-label*=\"Stop\" i]"],
+      "confirmTimeoutMs": 6000
+    }
+  },
+  {
+    "id": "grok",
+    "name": "Grok",
+    "url": "https://x.com/i/grok",
+    "matches": ["https://x.com/i/grok*"],
+    "reusablePaths": ["/i/grok"],
+    "defaultEnabled": false,
+    "loginHints": ["/i/flow/login", "/login"],
+    "adapter": {
+      "inputSelectors": ["textarea[placeholder]", "div[contenteditable=\"true\"][role=\"textbox\"]", "div[contenteditable=\"true\"]"],
+      "submitSelectors": ["button[data-testid=\"sendButton\"]", "button[data-testid=\"send-button\"]", "button[aria-label*=\"Send\" i]"],
+      "authSelectors": ["a[href*=\"/login\"]", "a[data-testid*=\"login\" i]"],
+      "sentIndicators": ["[data-testid*=\"message\" i]"],
+      "generatingIndicators": ["button[aria-label*=\"Stop\" i]", "button[data-testid*=\"stop\" i]"],
+      "confirmTimeoutMs": 6000
+    }
+  },
+  {
+    "id": "manus",
+    "name": "Manus",
+    "url": "https://manus.im/app",
+    "matches": ["https://manus.im/*", "https://www.manus.im/*"],
+    "reusablePaths": ["/app"],
+    "defaultEnabled": false,
+    "loginHints": ["/login", "/signin"],
+    "adapter": {
+      "inputSelectors": ["textarea[placeholder]", "div[contenteditable=\"true\"][role=\"textbox\"]", "div.ProseMirror[contenteditable=\"true\"]"],
+      "submitSelectors": ["button[type=\"submit\"]", "button[aria-label*=\"Send\" i]", "button[aria-label*=\"发送\" i]"],
+      "authSelectors": ["a[href*=\"login\"]", "button[data-testid*=\"login\" i]"],
+      "sentIndicators": ["[data-role=\"user\"]", "[data-testid*=\"user-message\" i]"],
+      "generatingIndicators": ["button[aria-label*=\"Stop\" i]", "button[aria-label*=\"停止\" i]"],
+      "confirmTimeoutMs": 7000
+    }
+  }
+]

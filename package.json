@@ -1,7 +1,7 @@
 {
   "name": "chorus",
-  "version": "1.0.2",
-  "description": "Chorus - AI Prompt Comparison Assistant",
+  "version": "1.1.0",
+  "description": "Chorus - Compare AI Answers",
   "type": "module",
   "scripts": {
     "dev": "wxt",
@@ -10,7 +10,11 @@
     "build:firefox": "wxt build -b firefox",
     "zip": "wxt zip",
     "zip:firefox": "wxt zip -b firefox",
-    "postbuild": "wxt zip"
+    "postbuild": "wxt zip",
+    "typecheck": "tsc --noEmit",
+    "validate:platforms": "node scripts/validate-platforms.mjs",
+    "validate:package": "node scripts/validate-package.mjs",
+    "verify": "npm run typecheck && npm run validate:platforms && npm run build && npm run validate:package"
   },
   "repository": {
     "type": "git",

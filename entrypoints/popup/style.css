@@ -204,6 +204,13 @@ button {
   transition: border-color 120ms ease, background 120ms ease, transform 120ms ease;
 }
 
+.model-copy,
+.result-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
 .model-option:hover {
   border-color: var(--line-strong);
   transform: translateY(-1px);
@@ -237,6 +244,24 @@ button {
   font-weight: 560;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-status {
+  min-height: 14px;
+  overflow: hidden;
+  color: var(--faint);
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.model-status.ready {
+  color: var(--success);
+}
+
+.model-status.signIn,
+.model-status.unavailable {
+  color: var(--danger);
 }
 
 .model-check {
@@ -324,7 +349,25 @@ button {
 
 .result-detail {
   color: var(--muted);
-  text-align: right;
+  font-size: 10.5px;
+}
+
+.result-actions {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.result-action {
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.result-action:hover {
+  color: var(--text);
 }
 
 .inline-message {

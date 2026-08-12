@@ -1,8 +1,22 @@
-# Chorus - Compare AI Answers
+# Chorus — Compare AI Answers
 
-Chorus is a privacy-first Chrome extension that sends one question to several AI products using the accounts already signed in to your browser.
+Chorus is a privacy-first Chrome extension that sends one question to ChatGPT, Claude, Gemini, Perplexity, Grok, and Manus through the accounts already signed in to your browser.
 
-## Supported products
+> Chorus is the current working name. A final name will be selected before the Chrome Web Store submission because another directly competing extension already uses this name.
+
+## What the launch version does
+
+- Sends one prompt to the AI sites you select
+- Reuses only empty, safe-to-use tabs and preserves existing drafts and conversations
+- Opens a fresh tab when an existing tab is not safe to reuse
+- Confirms sending per platform and reports sign-in, loading, input, and send failures separately
+- Keeps task progress recoverable if the popup closes
+- Lets you open a result or retry only the failed platforms
+- Uses no Chorus backend and sends prompts only to the selected AI websites
+
+The launch scope intentionally stops here. Answer aggregation, cross-checking, and multi-AI conversation sets are later product work.
+
+## Supported platforms
 
 - ChatGPT
 - Claude
@@ -11,31 +25,29 @@ Chorus is a privacy-first Chrome extension that sends one question to several AI
 - Grok
 - Manus
 
-## What changed in 1.1
+Platform URLs and page adapters have one source of truth: [`utils/platforms.json`](utils/platforms.json).
 
-- A simplified first-run experience with ChatGPT, Claude and Gemini selected by default
-- A focused product list instead of custom CSS selector configuration
-- Reuse of existing AI tabs when possible
-- Clear per-platform results such as sign-in required, input not found or filled but not sent
-- Narrow host permissions limited to supported AI products
-- Local-only aggregate product events that never store prompt text
+## Privacy and permissions
 
-## How it works
+Read the [Privacy Policy](PRIVACY.md) and the permission explanations in [Chrome Web Store Submission](docs/CHROME_WEB_STORE_SUBMISSION.md).
 
-1. Open Chorus
-2. Write one question
-3. Choose the AI products you want to use
-4. Select **Ask**
-5. Chorus reuses an existing product tab when possible or opens a new one, then fills and sends the question
-
-Prompts are processed locally and are not uploaded by Chorus.
-
-## Development
+## Develop and verify
 
 ```bash
-npm install
+npm ci
 npm run dev
-npm run build
+npm run verify
 ```
 
-Built with WXT, TypeScript and Manifest V3.
+`npm run verify` type-checks the code, validates all six platform adapters, creates the production WXT build and ZIP, and checks the manifest, permissions, icons, popup CSS/script, and archive contents.
+
+Production outputs:
+
+- Unpacked extension: `.output/chrome-mv3/`
+- Store upload ZIP: `.output/chorus-1.1.0-chrome.zip`
+
+Always load the WXT-generated folder or upload the WXT-generated ZIP. Do not manually assemble a test package.
+
+## Release status
+
+The source and package checks are automated. Real Chrome acceptance results and remaining submission work are tracked in [Chrome Web Store Submission](docs/CHROME_WEB_STORE_SUBMISSION.md).

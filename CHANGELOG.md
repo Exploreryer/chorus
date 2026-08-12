@@ -1,3 +1,15 @@
+## Version 1.1.0 (release candidate)
+
+- Added recoverable, task-based multi-platform sending with concurrency protection and cancellation
+- Reuses only empty safe tabs; preserves existing drafts and conversations
+- Added sign-in, loading, page, input, send-confirmation, and closed-tab error states
+- Added per-platform progress, results, opening, and targeted retry in the popup
+- Centralized six platform adapters and host permissions in one validated configuration
+- Removed local analytics and the broad `tabs` permission
+- Added WXT package validation, CI verification, privacy policy, and store submission checklist
+
+---
+
 ## Version 1.0.2 (2026-02-03)
 
 - fix: add icons configuration to manifest and bump version to 1.0.2 (2bdc335)
