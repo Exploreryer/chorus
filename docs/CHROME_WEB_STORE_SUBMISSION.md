@@ -45,7 +45,7 @@ The product name and all title references must be replaced together after the fi
 | `storage` | Remembers language and selected platforms locally; keeps the current task recoverable in browser-session storage | No sync or remote analytics |
 | `scripting` | Re-injects the packaged content script into already-open supported tabs after an extension install or update | Can run only on declared supported hosts |
 | `tabGroups` | Groups two or more newly created AI tabs so the user can identify the batch | Does not read unrelated tab content |
-| Host access | Finds prompt inputs, sends the user-entered question, and confirms the send on six supported services | Nine exact HTTPS host patterns; no `<all_urls>` |
+| Host access | Finds prompt inputs, sends the user-entered question, and confirms the send on six supported services | Ten exact HTTPS host patterns; no `<all_urls>` |
 
 The broad `tabs` permission is intentionally not requested; the declared host permissions provide the supported-tab URL access needed by the launch feature.
 
