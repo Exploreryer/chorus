@@ -348,13 +348,12 @@ export default defineBackground(() => {
     const readiness: PlatformReadinessMap = {};
     await Promise.all(
       defaultProducts.map(async (product) => {
+        const productTabs = await chrome.tabs.query({ url: product.matches });
         const tab = await findReusableTab(product);
         if (!tab?.id) {
-          readiness[product.id] = 'willOpen';
-          return;
-        }
-        if (isLoginUrl(tab.url, product)) {
-          readiness[product.id] = 'signIn';
+          readiness[product.id] = productTabs.some((candidate) => isLoginUrl(candidate.url, product))
+            ? 'signIn'
+            : 'willOpen';
           return;
         }
         const inspection = await inspectTab(tab.id, product);
@@ -380,6 +379,22 @@ export default defineBackground(() => {
   async function recoverInterruptedTask(): Promise<void> {
     const task = await getStoredTask();
     if (!task || task.status !== 'running') return;
+    const recordedProductIds = new Set(task.results.map((result) => result.productId));
+    const interruptedResults = task.productIds.flatMap((productId) => {
+      if (recordedProductIds.has(productId)) return [];
+        const product = getProduct(productId);
+      if (!product) return [];
+      return [
+        toResult(
+          product,
+          undefined,
+          false,
+          failure('TASK_INTERRUPTED', 'Sending was interrupted before a result was recorded')
+        ),
+      ];
+    });
+    task.results = [...task.results, ...interruptedResults];
+    task.completed = task.results.length;
     task.status = 'failed';
     task.errorCode = 'TASK_INTERRUPTED';
     task.error = 'The browser stopped the previous task';
@@ -399,21 +414,23 @@ async function getStoredTask(): Promise<DistributionTask | null> {
 async function saveTask(task: DistributionTask): Promise<void> {
   task.updatedAt = new Date().toISOString();
   const snapshot = snapshotTask(task);
-  taskWriteQueue = taskWriteQueue.then(() =>
-    chrome.storage.session.set({ [TASK_KEY]: snapshot })
-  );
+  taskWriteQueue = taskWriteQueue
+    .catch(() => undefined)
+    .then(() => chrome.storage.session.set({ [TASK_KEY]: snapshot }));
   await taskWriteQueue;
 }
 
 async function saveAndNotify(task: DistributionTask): Promise<void> {
   task.updatedAt = new Date().toISOString();
   const snapshot = snapshotTask(task);
-  taskWriteQueue = taskWriteQueue.then(async () => {
-    await chrome.storage.session.set({ [TASK_KEY]: snapshot });
-    await chrome.runtime
-      .sendMessage({ action: 'distributionTaskUpdated', task: snapshot })
-      .catch(() => undefined);
-  });
+  taskWriteQueue = taskWriteQueue
+    .catch(() => undefined)
+    .then(async () => {
+      await chrome.storage.session.set({ [TASK_KEY]: snapshot });
+      await chrome.runtime
+        .sendMessage({ action: 'distributionTaskUpdated', task: snapshot })
+        .catch(() => undefined);
+    });
   await taskWriteQueue;
 }
 
@@ -432,12 +449,14 @@ async function getManagedTabs(): Promise<Partial<Record<ProductId, number>>> {
 }
 
 async function rememberManagedTab(productId: ProductId, tabId: number): Promise<void> {
-  managedTabsWriteQueue = managedTabsWriteQueue.then(async () => {
-    const managedTabs = await getManagedTabs();
-    await chrome.storage.session.set({
-      [MANAGED_TABS_KEY]: { ...managedTabs, [productId]: tabId },
+  managedTabsWriteQueue = managedTabsWriteQueue
+    .catch(() => undefined)
+    .then(async () => {
+      const managedTabs = await getManagedTabs();
+      await chrome.storage.session.set({
+        [MANAGED_TABS_KEY]: { ...managedTabs, [productId]: tabId },
+      });
     });
-  });
   await managedTabsWriteQueue;
 }
 

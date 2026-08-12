@@ -118,10 +118,36 @@ button {
 
 .prompt-card,
 .progress-panel,
-.results-panel {
+.results-panel,
+.onboarding-panel {
   border: 1px solid var(--line);
   background: var(--surface);
   border-radius: 13px;
+}
+
+.onboarding-panel {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  background: var(--accent-soft);
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.onboarding-panel[hidden] {
+  display: none;
+}
+
+.onboarding-panel p {
+  margin: 0;
+}
+
+.onboarding-panel .text-button {
+  flex: none;
+  color: var(--accent);
 }
 
 .prompt-card {

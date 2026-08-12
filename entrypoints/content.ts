@@ -14,6 +14,12 @@ export default defineContentScript({
   runAt: 'document_idle',
 
   main() {
+    const contentScope = globalThis as typeof globalThis & {
+      __chorusContentScriptRegistered__?: boolean;
+    };
+    if (contentScope.__chorusContentScriptRegistered__) return;
+    contentScope.__chorusContentScriptRegistered__ = true;
+
     chrome.runtime.onMessage.addListener(
       (
         request: ContentScriptRequest,
@@ -121,20 +127,12 @@ async function confirmSent(
   before: ConfirmationState
 ): Promise<boolean> {
   const start = Date.now();
-  let inputClearedAt: number | null = null;
 
   while (Date.now() - start < adapter.confirmTimeoutMs) {
     const now = captureConfirmationState(adapter, prompt);
     if (now.matchingPromptCount > before.matchingPromptCount) return true;
     if (now.sentCount > before.sentCount) return true;
     if (now.generatingCount > before.generatingCount) return true;
-
-    if (readInput(input).trim().length === 0) {
-      inputClearedAt ??= Date.now();
-      if (Date.now() - inputClearedAt >= 800) return true;
-    } else {
-      inputClearedAt = null;
-    }
     await sleep(200);
   }
   return false;

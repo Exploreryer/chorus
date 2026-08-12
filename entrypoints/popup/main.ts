@@ -18,6 +18,9 @@ const DEFAULT_SELECTION = defaultProducts
 const elements = {
   tagline: document.getElementById('tagline') as HTMLParagraphElement,
   languageButton: document.getElementById('languageButton') as HTMLButtonElement,
+  onboardingPanel: document.getElementById('onboardingPanel') as HTMLElement,
+  onboardingText: document.getElementById('onboardingText') as HTMLParagraphElement,
+  dismissOnboardingButton: document.getElementById('dismissOnboardingButton') as HTMLButtonElement,
   promptLabel: document.getElementById('promptLabel') as HTMLLabelElement,
   promptInput: document.getElementById('promptInput') as HTMLTextAreaElement,
   clearButton: document.getElementById('clearButton') as HTMLButtonElement,
@@ -48,6 +51,7 @@ async function init(): Promise<void> {
   await initLanguage();
   selectedProductIds = new Set(await loadSelection());
   bindEvents();
+  await restoreOnboarding();
   renderAll();
   await Promise.all([restoreTask(), refreshReadiness()]);
 }
@@ -98,6 +102,11 @@ function bindEvents(): void {
     renderAll();
   });
 
+  elements.dismissOnboardingButton.addEventListener('click', async () => {
+    elements.onboardingPanel.hidden = true;
+    await chrome.storage.local.set({ onboardingDismissed: true });
+  });
+
   elements.refreshReadinessButton.addEventListener('click', refreshReadiness);
   elements.askButton.addEventListener('click', () => startDistribution([...selectedProductIds]));
   elements.cancelButton.addEventListener('click', cancelDistribution);
@@ -113,6 +122,8 @@ function bindEvents(): void {
 
 function renderAll(): void {
   elements.tagline.textContent = t('tagline');
+  elements.onboardingText.textContent = t('onboarding');
+  elements.dismissOnboardingButton.textContent = t('gotIt');
   elements.languageButton.textContent = currentLanguage() === 'zh' ? 'EN' : '中';
   elements.promptLabel.textContent = t('promptLabel');
   elements.promptInput.placeholder = t('promptPlaceholder');
@@ -126,6 +137,11 @@ function renderAll(): void {
   renderModels();
   renderTask();
   renderAction();
+}
+
+async function restoreOnboarding(): Promise<void> {
+  const stored = await chrome.storage.local.get('onboardingDismissed');
+  elements.onboardingPanel.hidden = stored.onboardingDismissed === true;
 }
 
 function renderModels(): void {
@@ -349,6 +365,8 @@ function errorLabel(result: DistributionResult): string {
       return t('contentUnavailable');
     case 'TAB_CLOSED':
       return t('tabClosed');
+    case 'TASK_INTERRUPTED':
+      return t('taskInterruptedResult');
     default:
       return t('unknownError');
   }

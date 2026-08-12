@@ -3,6 +3,8 @@ export type Language = 'en' | 'zh';
 const translations = {
   en: {
     tagline: 'Ask once across your trusted AI tools',
+    onboarding: 'Sign in to the AI sites you use. Chorus reuses only empty tabs and preserves drafts and conversations',
+    gotIt: 'Got it',
     promptLabel: 'Your question',
     clear: 'Clear',
     promptPlaceholder: 'What do you want to compare?',
@@ -34,6 +36,7 @@ const translations = {
     taskInProgress: 'Another send is still running',
     taskCancelled: 'Sending cancelled',
     taskInterrupted: 'The previous send was interrupted. You can retry failed platforms.',
+    taskInterruptedResult: 'Interrupted before confirmation',
     unknownError: 'Could not send',
     emptyPrompt: 'Write a question first',
     selectProduct: 'Choose at least one AI',
@@ -47,6 +50,8 @@ const translations = {
   },
   zh: {
     tagline: '一个问题，同时问你信任的 AI',
+    onboarding: '请先登录要使用的 AI 网站。Chorus 只复用空白页面，并保留草稿和已有对话',
+    gotIt: '知道了',
     promptLabel: '你的问题',
     clear: '清空',
     promptPlaceholder: '你想比较什么？',
@@ -78,6 +83,7 @@ const translations = {
     taskInProgress: '已有发送任务正在进行',
     taskCancelled: '已取消发送',
     taskInterrupted: '上次发送被中断，可以重试失败平台',
+    taskInterruptedResult: '确认前被中断',
     unknownError: '发送失败',
     emptyPrompt: '请先输入问题',
     selectProduct: '请至少选择一个 AI',
